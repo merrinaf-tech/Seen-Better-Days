@@ -1,4 +1,5 @@
 using Game.Buildings;
+using Game.Objects;
 using Game.Prefabs;
 using Game.Zones;
 using Unity.Entities;
@@ -39,6 +40,12 @@ namespace SeenBetterDays.Data
             {
                 reason = "entity is not a building";
                 return BuildingCategory.NotABuilding;
+            }
+
+            if (IsUnderConstruction(entityManager, building))
+            {
+                reason = "building is under construction";
+                return BuildingCategory.Excluded;
             }
 
             if (!entityManager.HasComponent<PrefabRef>(building))
@@ -98,6 +105,18 @@ namespace SeenBetterDays.Data
                     reason = "zone has no area type";
                     return BuildingCategory.Excluded;
             }
+        }
+
+        /// <summary>
+        /// Construction is a state of the building entity, not its prefab. Keeping the check here
+        /// gives the simulation, detail layer, tooltip and manual test controls one definition of
+        /// a building that Seen Better Days must leave alone.
+        /// </summary>
+        public static bool IsUnderConstruction(EntityManager entityManager, Entity building)
+        {
+            return building != Entity.Null
+                && entityManager.Exists(building)
+                && entityManager.HasComponent<UnderConstruction>(building);
         }
     }
 }

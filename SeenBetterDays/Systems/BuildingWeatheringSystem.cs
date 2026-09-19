@@ -2,6 +2,7 @@ using Game;
 using Game.Buildings;
 using Game.City;
 using Game.Common;
+using Game.Objects;
 using Game.Prefabs;
 using Game.Tools;
 using Game.Zones;
@@ -43,6 +44,7 @@ namespace SeenBetterDays.Systems
         private Game.Simulation.CitySystem m_CitySystem;
         private MeshColorOverlayRenderer m_Renderer;
         private EntityQuery m_GrowableQuery;
+        private EntityQuery m_UnderConstructionQuery;
         private int m_Cursor;
 
         /// <summary>
@@ -121,6 +123,20 @@ namespace SeenBetterDays.Systems
                 },
             });
 
+            m_UnderConstructionQuery = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[]
+                {
+                    ComponentType.ReadOnly<Building>(),
+                    ComponentType.ReadOnly<UnderConstruction>(),
+                },
+                None = new[]
+                {
+                    ComponentType.ReadOnly<Deleted>(),
+                    ComponentType.ReadOnly<Temp>(),
+                },
+            });
+
             RequireForUpdate(m_GrowableQuery);
         }
 
@@ -175,6 +191,8 @@ namespace SeenBetterDays.Systems
             {
                 return;
             }
+
+            ClearConstructionVisuals();
 
             // Read live rather than latched at load, so unticking the option takes the weathering
             // off the city while the player is looking at it. A setting that needs a reload to be
@@ -234,6 +252,11 @@ namespace SeenBetterDays.Systems
 
         private void Process(Entity building)
         {
+            if (BuildingClassifier.IsUnderConstruction(EntityManager, building))
+            {
+                return;
+            }
+
             // Hand-set buildings are the player's statement about how they should look, and the
             // simulation has nothing to add to it.
             if (m_Pinned.Contains(building))
@@ -348,6 +371,41 @@ namespace SeenBetterDays.Systems
             int placed;
             string failure;
             m_Renderer.Apply(building, profile, out placed, out failure);
+        }
+
+        /// <summary>
+        /// Immediately removes both the visible colour and the remembered weathering state from
+        /// buildings that have entered construction. The separate query matters for upgrades: a
+        /// building may already have been weathered before UnderConstruction was added to it.
+        /// Dropping the state makes the completed building a fresh observation rather than a
+        /// continuation of its pre-construction appearance.
+        /// </summary>
+        private void ClearConstructionVisuals()
+        {
+            NativeArray<Entity> buildings = m_UnderConstructionQuery.ToEntityArray(Allocator.TempJob);
+            try
+            {
+                for (int i = 0; i < buildings.Length; i++)
+                {
+                    Entity building = buildings[i];
+                    m_Pinned.Remove(building);
+
+                    if (m_Renderer.Has(building)
+                        || EntityManager.HasBuffer<PristineMeshColor>(building))
+                    {
+                        m_Renderer.Forget(building);
+                    }
+
+                    if (EntityManager.HasComponent<WeatheringState>(building))
+                    {
+                        EntityManager.RemoveComponent<WeatheringState>(building);
+                    }
+                }
+            }
+            finally
+            {
+                buildings.Dispose();
+            }
         }
 
         /// <summary>

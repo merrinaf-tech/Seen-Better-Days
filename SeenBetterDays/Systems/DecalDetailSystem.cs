@@ -72,6 +72,7 @@ namespace SeenBetterDays.Systems
         private Game.Rendering.CameraUpdateSystem m_CameraSystem;
         private BuildingOverlayTestSystem m_Harness;
         private EntityQuery m_GrowableQuery;
+        private EntityQuery m_UnderConstructionQuery;
         private int m_Cursor;
 
         /// <summary>
@@ -109,6 +110,20 @@ namespace SeenBetterDays.Systems
                     ComponentType.ReadOnly<Building>(),
                     ComponentType.ReadOnly<PrefabRef>(),
                     ComponentType.ReadOnly<Transform>(),
+                },
+                None = new[]
+                {
+                    ComponentType.ReadOnly<Deleted>(),
+                    ComponentType.ReadOnly<Temp>(),
+                },
+            });
+
+            m_UnderConstructionQuery = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[]
+                {
+                    ComponentType.ReadOnly<Building>(),
+                    ComponentType.ReadOnly<UnderConstruction>(),
                 },
                 None = new[]
                 {
@@ -165,6 +180,8 @@ namespace SeenBetterDays.Systems
 
                 return;
             }
+
+            RemoveConstructionDetails(renderer);
 
             if (m_CameraSystem == null || m_CameraSystem.activeCameraController == null)
             {
@@ -260,6 +277,30 @@ namespace SeenBetterDays.Systems
                 m_Ineligible = 0;
                 m_ApplyFailed = 0;
                 m_LastApplyFailure = null;
+            }
+        }
+
+        /// <summary>
+        /// A building can enter construction after it already received close-range marks, most
+        /// notably during an upgrade. Sweep the normally tiny construction set every pass so
+        /// those marks disappear without waiting for the round-robin cursor to find the building.
+        /// </summary>
+        private void RemoveConstructionDetails(DecalObjectOverlayRenderer renderer)
+        {
+            NativeArray<Entity> buildings = m_UnderConstructionQuery.ToEntityArray(Allocator.TempJob);
+            try
+            {
+                for (int i = 0; i < buildings.Length; i++)
+                {
+                    if (renderer.Remove(buildings[i]))
+                    {
+                        m_Removed++;
+                    }
+                }
+            }
+            finally
+            {
+                buildings.Dispose();
             }
         }
 
