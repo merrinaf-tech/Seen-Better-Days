@@ -85,6 +85,10 @@ namespace SeenBetterDays.Systems
         private int m_InRange;
         private int m_BelowThreshold;
         private int m_MeshNotReady;
+        private int m_NoWeatheringState;
+        private int m_Ineligible;
+        private int m_ApplyFailed;
+        private string m_LastApplyFailure;
         private int m_Passes;
 
         public new bool Enabled { get; set; }
@@ -226,13 +230,23 @@ namespace SeenBetterDays.Systems
                 Mod.Log.Info("Seen Better Days: decal detail layer - " + m_Built
                            + " building(s) detailed, " + m_InRange + " seen in range, "
                            + m_BelowThreshold + " too lightly weathered to bother, "
-                           + m_MeshNotReady + " whose mesh is not loaded yet.");
+                           + m_MeshNotReady + " whose mesh is not loaded yet, "
+                           + m_NoWeatheringState + " awaiting a weathering state, "
+                           + m_Ineligible + " ineligible, "
+                           + m_ApplyFailed + " placement failure(s)"
+                           + (string.IsNullOrEmpty(m_LastApplyFailure)
+                               ? "."
+                               : " (last: " + m_LastApplyFailure + ")."));
 
                 m_Passes = 0;
                 m_Built = 0;
                 m_InRange = 0;
                 m_BelowThreshold = 0;
                 m_MeshNotReady = 0;
+                m_NoWeatheringState = 0;
+                m_Ineligible = 0;
+                m_ApplyFailed = 0;
+                m_LastApplyFailure = null;
             }
         }
 
@@ -277,6 +291,7 @@ namespace SeenBetterDays.Systems
         {
             if (!EntityManager.HasComponent<WeatheringState>(building))
             {
+                m_NoWeatheringState++;
                 return false;
             }
 
@@ -295,6 +310,7 @@ namespace SeenBetterDays.Systems
 
             if (!category.IsEligible())
             {
+                m_Ineligible++;
                 return false;
             }
 
@@ -314,6 +330,8 @@ namespace SeenBetterDays.Systems
             string failure;
             if (!renderer.Apply(building, profile, out placed, out failure))
             {
+                m_ApplyFailed++;
+                m_LastApplyFailure = failure;
                 return false;
             }
 
