@@ -72,6 +72,10 @@ namespace SeenBetterDays
             updateSystem.UpdateBefore<BuildingWeatheringSystem>(SystemUpdatePhase.ModificationEnd);
             updateSystem.UpdateBefore<DecalDetailSystem>(SystemUpdatePhase.ModificationEnd);
 
+            // Weathering overlays are implementation details, not player-authored props. Let the
+            // tool finish its raycast, then redirect an overlay selection to its owning building.
+            updateSystem.UpdateAfter<WeatheringOverlaySelectionSystem>(SystemUpdatePhase.ToolUpdate);
+
             // Runs as the city is written to disk and takes the weathering off first, so nothing
             // this mod wrote ends up in the save. See WeatheringSaveGuardSystem for why that is
             // the right answer rather than merely the safe one.
