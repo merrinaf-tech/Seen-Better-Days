@@ -1,0 +1,14 @@
+<Publish>
+	<!--
+	  Rendering proof of concept. NOT published, and must not be: there is no ModId, no
+	  thumbnail and no screenshots, and the Paradox Mods publisher wipes any metadata this
+	  file does not declare. Fill this in only when Seen Better Days is an actual mod.
+	-->
+	<DisplayName Value="Seen Better Days (rendering POC)" />
+	<ShortDescription Value="Developer build. Proves per-instance weathering overlays on growable buildings." />
+	<LongDescription>Internal rendering proof of concept - see docs/RENDERING_POC.md.</LongDescription>
+	<ModVersion Value="0.1.0" />
+	<GameVersion Value="1.6.*" />
+	<AccessLevel Value="Private" />
+	<ChangeLog>Initial rendering proof of concept.</ChangeLog>
+</Publish>

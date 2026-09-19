@@ -1,0 +1,105 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Library</OutputType>
+		<TargetFramework>net48</TargetFramework>
+		<LangVersion>9.0</LangVersion>
+		<Configurations>Debug;Release</Configurations>
+
+		<AssemblyName>SeenBetterDays</AssemblyName>
+		<RootNamespace>SeenBetterDays</RootNamespace>
+		<Product>SeenBetterDays</Product>
+		<Version>0.1.0</Version>
+		<AssemblyVersion>0.1.0.0</AssemblyVersion>
+		<FileVersion>0.1.0.0</FileVersion>
+
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+		<SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+		<PublishConfigurationPath>Properties\PublishConfiguration.xml</PublishConfigurationPath>
+
+		<!--
+			Compile against the game's own base class library, not the .NET Framework 4.8 reference
+			assemblies. Mod.props already points mscorlib at Cities2_Data/Managed; leaving the
+			implicit references on makes the net48 ref-assembly mscorlib win, and that one has no
+			System.ReadOnlySpan. Unity's Entities API declares ReadOnlySpan overloads - on
+			EntityManager.CreateEntity among others - and the compiler needs the type to resolve any
+			call in that method group, even one that ends up picking a different overload.
+		-->
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<Optimize>true</Optimize>
+		<!--
+			A PDB must exist even in Release: Unity's EntitiesILPostProcessors reads
+			InMemoryAssembly.PdbData and throws without one. RemoveSymbolsBeforeDeploy
+			deletes it again before the mod folder is written.
+		-->
+		<DebugType>portable</DebugType>
+		<DebugSymbols>true</DebugSymbols>
+		<Deterministic>true</Deterministic>
+		<PathMap>$(MSBuildProjectDirectory)=SeenBetterDays</PathMap>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<CsiiToolPath>$([System.Environment]::GetEnvironmentVariable('CSII_TOOLPATH', 'EnvironmentVariableTarget.User'))</CsiiToolPath>
+	</PropertyGroup>
+
+	<Import Project="$(CsiiToolPath)\Mod.props" />
+	<Import Project="$(CsiiToolPath)\Mod.targets" />
+
+	<ItemGroup>
+		<Reference Include="Game"><HintPath>$(ManagedPath)\Game.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Colossal.Core"><HintPath>$(ManagedPath)\Colossal.Core.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Colossal.Logging"><HintPath>$(ManagedPath)\Colossal.Logging.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Colossal.IO"><HintPath>$(ManagedPath)\Colossal.IO.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Colossal.IO.AssetDatabase"><HintPath>$(ManagedPath)\Colossal.IO.AssetDatabase.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Colossal.Mathematics"><HintPath>$(ManagedPath)\Colossal.Mathematics.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Colossal.Collections"><HintPath>$(ManagedPath)\Colossal.Collections.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Colossal.Localization"><HintPath>$(ManagedPath)\Colossal.Localization.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Colossal.UI"><HintPath>$(ManagedPath)\Colossal.UI.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Colossal.UI.Binding"><HintPath>$(ManagedPath)\Colossal.UI.Binding.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Colossal.PSI.Common"><HintPath>$(ManagedPath)\Colossal.PSI.Common.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Unity.Collections"><HintPath>$(ManagedPath)\Unity.Collections.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Unity.Entities"><HintPath>$(ManagedPath)\Unity.Entities.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Unity.Mathematics"><HintPath>$(ManagedPath)\Unity.Mathematics.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Unity.Burst"><HintPath>$(ManagedPath)\Unity.Burst.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="UnityEngine.CoreModule"><HintPath>$(ManagedPath)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Unity.InputSystem"><HintPath>$(ManagedPath)\Unity.InputSystem.dll</HintPath><Private>false</Private></Reference>
+		<!-- Only so the compiler can resolve members that mention Cinemachine types. -->
+		<Reference Include="Cinemachine"><HintPath>$(ManagedPath)\Cinemachine.dll</HintPath><Private>false</Private></Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="Properties\PublishConfiguration.xml" />
+	</ItemGroup>
+
+	<!--
+		DeployWIP deletes the mod folder and then writes it again. With the game running the
+		delete half-succeeds - the managed DLL goes, the Burst stub is locked and stays - and the
+		mod is left half-installed and unloadable, which is worse than not building at all. This
+		has cost three separate rounds of confusion, so stop before the damage instead of after.
+	-->
+	<Target Name="AbortDeployIfGameRunning" BeforeTargets="DeployWIP">
+		<Exec Command="tasklist /FI &quot;IMAGENAME eq Cities2.exe&quot; /NH"
+		      ConsoleToMSBuild="true"
+		      StandardOutputImportance="low"
+		      ContinueOnError="true">
+			<Output TaskParameter="ConsoleOutput" PropertyName="SbdRunningProcesses" />
+		</Exec>
+		<Error Condition="'$(SbdRunningProcesses)' != '' AND $(SbdRunningProcesses.Contains('Cities2.exe'))"
+		       Text="Cities: Skylines II is running. Close it and build again - deploying over a running game leaves the mod folder half-written." />
+	</Target>
+
+	<Target Name="RemoveSymbolsBeforeDeploy" AfterTargets="RunModPostProcessor" BeforeTargets="DeployWIP">
+		<ItemGroup>
+			<SymbolsToStrip Include="$(OutDir)**\*.pdb" />
+			<SymbolsToStrip Include="$(OutDir)**\*.xml" />
+		</ItemGroup>
+		<Delete Files="@(SymbolsToStrip)" />
+	</Target>
+
+</Project>
