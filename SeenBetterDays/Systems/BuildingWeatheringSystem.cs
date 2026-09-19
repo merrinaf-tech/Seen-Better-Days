@@ -610,11 +610,12 @@ namespace SeenBetterDays.Systems
             int condition = EntityManager.GetComponentData<BuildingCondition>(building).m_Condition;
             bool abandoned = EntityManager.HasComponent<Abandoned>(building);
             float efficiency = EfficiencyOf(building);
+            float poverty = PovertyOf(building);
             float wealth = WealthOf(building);
 
             float target = WeatheringTarget.Compute(
                 condition, abandonCost, spawnable.m_Level, efficiency, abandoned,
-                PovertyOf(building), wealth, SeedFor(building));
+                poverty, wealth, SeedFor(building));
 
             // What is on the building right now, which during a slow recovery is not the target.
             float shown = EntityManager.HasComponent<WeatheringState>(building)
@@ -632,6 +633,11 @@ namespace SeenBetterDays.Systems
             else if (wealth > 0.05f)
             {
                 street = string.Format("well-off street ({0:0} against a median of {1:0})",
+                                       landValue, m_LandValueMedian);
+            }
+            else if (poverty > 0.05f)
+            {
+                street = string.Format("below-median street ({0:0} against a median of {1:0})",
                                        landValue, m_LandValueMedian);
             }
             else
@@ -654,14 +660,24 @@ namespace SeenBetterDays.Systems
                 trouble = string.Format(", running at {0:0}% efficiency", efficiency * 100f);
             }
 
-            string drift = "";
-            if (math.abs(target - shown) >= 0.02f)
+            bool pinned = m_Pinned.Contains(building);
+            string hold = pinned ? " (held for testing)" : "";
+            string trajectory = "";
+            if (pinned)
             {
-                drift = string.Format(", heading for {0:0}%", target * 100f);
+                trajectory = string.Format("\nnatural state: {0} - {1:0}%",
+                    BuildingVisualProfile.StateFor(target), target * 100f);
+            }
+            else if (math.abs(target - shown) >= 0.02f)
+            {
+                string direction = target > shown ? "weathering" : "recovering";
+                trajectory = string.Format("\n{0} toward {1} - {2:0}%", direction,
+                    BuildingVisualProfile.StateFor(target), target * 100f);
             }
 
-            text = string.Format("{0} - {1:0}% weathered\nlevel {2}, {3}{4}{5}",
-                                 state, shown * 100f, spawnable.m_Level, street, trouble, drift);
+            text = string.Format("{0} - {1:0}% weathered{2}\nlevel {3}, {4}{5}{6}",
+                                 state, shown * 100f, hold, spawnable.m_Level,
+                                 street, trouble, trajectory);
             return true;
         }
 
