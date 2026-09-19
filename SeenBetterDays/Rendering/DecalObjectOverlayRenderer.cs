@@ -261,6 +261,9 @@ namespace SeenBetterDays.Rendering
         /// <summary>All four sides of the building that produced a usable rectangle.</summary>
         private readonly List<BuildingFacade> m_Facades = new List<BuildingFacade>(4);
 
+        private float m_MaxFacadeWidth;
+        private float m_MaxFacadeHeight;
+
         /// <summary>How much wall this building has, against <see cref="ReferenceWallArea"/>.
         /// Clamped because the point is proportion, not a tower buried in graffiti.</summary>
         private float m_WallScale = 1f;
@@ -284,6 +287,8 @@ namespace SeenBetterDays.Rendering
         private bool TryResolveAllFacades(Entity building, out string failureReason)
         {
             m_Facades.Clear();
+            m_MaxFacadeWidth = 0f;
+            m_MaxFacadeHeight = 0f;
             failureReason = null;
 
             if (!m_EntityManager.Exists(building)
@@ -310,6 +315,8 @@ namespace SeenBetterDays.Rendering
                 if (BuildingFacade.TryBuild(transform, geometry, (FacadeSide)side, out facade) && facade.IsValid)
                 {
                     m_Facades.Add(facade);
+                    m_MaxFacadeWidth = math.max(m_MaxFacadeWidth, facade.Width);
+                    m_MaxFacadeHeight = math.max(m_MaxFacadeHeight, facade.Height);
                 }
             }
 
@@ -1037,7 +1044,13 @@ namespace SeenBetterDays.Rendering
                 DecalPrefabInfo decal = ForcedDecal;
                 if (decal == null)
                 {
-                    decal = m_Catalog.Pick(family, AllowNonBuildingDecals, ref rng, out familyMatched);
+                    decal = m_Catalog.Pick(
+                        family,
+                        AllowNonBuildingDecals,
+                        m_MaxFacadeWidth,
+                        m_MaxFacadeHeight,
+                        ref rng,
+                        out familyMatched);
                 }
 
                 if (decal == null)
@@ -1058,6 +1071,15 @@ namespace SeenBetterDays.Rendering
                     int facadeIndex = (startFacade + attempt) % m_Facades.Count;
                     BuildingFacade facade = m_Facades[facadeIndex];
 
+                    // A projector cannot be clipped to its owning building. If it overhangs this
+                    // rectangle it can paint an attached neighbour, which is how a Maintained
+                    // row house appeared to retain two stains that actually belonged next door.
+                    if (!AllowNonBuildingDecals
+                        && (decal.Size.x > facade.Width || decal.Size.z > facade.Height))
+                    {
+                        continue;
+                    }
+
                     // Keep the decal inside the facade rectangle. A projector that overhangs the
                     // wall does not merely look wrong - it paints whatever else is behind it.
                     float marginU = math.min(0.5f, decal.Size.x * 0.5f / math.max(facade.Width, 0.01f));
@@ -1072,6 +1094,18 @@ namespace SeenBetterDays.Rendering
                     float3 position;
                     quaternion rotation;
                     if (!TryResolvePlacement(building, facade, u, v, ref rng, out position, out rotation))
+                    {
+                        continue;
+                    }
+
+                    // The real mesh sample can move away from the rectangle's proposed point.
+                    // Recheck the final centre so the full decal still lies inside the facade.
+                    float3 fromCenter = position - facade.Center;
+                    float halfWidth = facade.Width * 0.5f;
+                    float halfHeight = facade.Height * 0.5f;
+                    if (!AllowNonBuildingDecals
+                        && (math.abs(math.dot(fromCenter, facade.Tangent)) + decal.Size.x * 0.5f > halfWidth
+                            || math.abs(math.dot(fromCenter, facade.Up)) + decal.Size.z * 0.5f > halfHeight))
                     {
                         continue;
                     }

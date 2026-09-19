@@ -665,7 +665,13 @@ namespace SeenBetterDays.Rendering
         /// the whitelist has no matching prefab it returns null instead of substituting unrelated
         /// artwork. The broad fallback survives only behind the explicit non-building diagnostic.
         /// </summary>
-        public DecalPrefabInfo Pick(OverlayFamily family, bool allowNonBuildingDecals, ref Unity.Mathematics.Random rng, out bool wasFamilyMatch)
+        public DecalPrefabInfo Pick(
+            OverlayFamily family,
+            bool allowNonBuildingDecals,
+            float maxWidth,
+            float maxHeight,
+            ref Unity.Mathematics.Random rng,
+            out bool wasFamilyMatch)
         {
             wasFamilyMatch = false;
 
@@ -690,7 +696,9 @@ namespace SeenBetterDays.Rendering
                 OverlayFamily available = allowNonBuildingDecals
                     ? pool[i].Families
                     : pool[i].AutomaticFamilies;
-                if ((available & family) != 0)
+                if ((available & family) != 0
+                    && (allowNonBuildingDecals
+                        || (pool[i].Size.x <= maxWidth && pool[i].Size.z <= maxHeight)))
                 {
                     matches++;
                 }
@@ -705,7 +713,10 @@ namespace SeenBetterDays.Rendering
                     OverlayFamily available = allowNonBuildingDecals
                         ? pool[i].Families
                         : pool[i].AutomaticFamilies;
-                    if ((available & family) != 0 && wanted-- == 0)
+                    if ((available & family) != 0
+                        && (allowNonBuildingDecals
+                            || (pool[i].Size.x <= maxWidth && pool[i].Size.z <= maxHeight))
+                        && wanted-- == 0)
                     {
                         return pool[i];
                     }

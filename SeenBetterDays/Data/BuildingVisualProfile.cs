@@ -104,10 +104,9 @@ namespace SeenBetterDays.Data
         /// Turns one weathering figure into the mix of families a building of this category would
         /// actually show.
         ///
-        /// The categories differ the way the brief describes them: housing stains and cracks,
-        /// shops collect street-level grime and tags, offices streak and dull rather than crack,
-        /// industry rusts. The weights are what a category *tends* toward, not a rule - the seed
-        /// still moves every building off the average so two neighbours never match.
+        /// Each visual state introduces one new readable kind of damage: Aged has cracks, Worn
+        /// adds dirt, Neglected adds graffiti and Decayed adds stains. Category weights still
+        /// vary the amount, while the seed moves individual buildings off the average.
         /// </summary>
         public static BuildingVisualProfile FromWeathering(BuildingCategory category, float weathering, uint seed)
         {
@@ -119,37 +118,43 @@ namespace SeenBetterDays.Data
                 return w * weight * (0.7f + 0.6f * rng.NextFloat());
             }
 
-            float dirt, stain, crack, moss, rust, graffiti;
+            float dirt, stain, crack, graffiti;
 
             switch (category)
             {
                 case BuildingCategory.Commercial:
-                    dirt = Family(1.0f); stain = Family(0.7f); crack = Family(0.3f);
-                    moss = Family(0.15f); rust = Family(0.15f); graffiti = Family(0.6f);
+                    dirt = Family(1.0f); stain = Family(0.7f); crack = Family(0.8f); graffiti = Family(0.6f);
                     break;
                 case BuildingCategory.Office:
-                    dirt = Family(0.9f); stain = Family(0.8f); crack = Family(0.15f);
-                    moss = Family(0.1f); rust = Family(0.1f); graffiti = Family(0.2f);
+                    dirt = Family(0.9f); stain = Family(0.8f); crack = Family(0.8f); graffiti = Family(0.35f);
                     break;
                 case BuildingCategory.Industrial:
-                    dirt = Family(1.0f); stain = Family(0.8f); crack = Family(0.5f);
-                    moss = Family(0.1f); rust = Family(0.9f); graffiti = Family(0.2f);
+                    dirt = Family(1.0f); stain = Family(0.8f); crack = Family(0.8f); graffiti = Family(0.35f);
                     break;
                 default:
-                    dirt = Family(1.0f); stain = Family(0.8f); crack = Family(0.5f);
-                    moss = Family(0.3f); rust = Family(0.15f); graffiti = Family(0.3f);
+                    dirt = Family(1.0f); stain = Family(0.8f); crack = Family(0.8f); graffiti = Family(0.35f);
                     break;
             }
 
+            VisualState state = StateFor(w);
+
+            // These gates are the visual vocabulary of the five states. A zero is important:
+            // the decal planner treats it as a hard prohibition, so a family cannot reappear by
+            // rounding, minimum-mark rescue or a large facade budget.
+            if (state < VisualState.Worn) dirt = 0f;
+            if (state < VisualState.Decayed) stain = 0f;
+            if (state < VisualState.Aged) crack = 0f;
+            if (state < VisualState.Neglected) graffiti = 0f;
+
             return new BuildingVisualProfile
             {
-                State = StateFor(w),
+                State = state,
                 Seed = seed,
                 Dirt = dirt,
                 Stain = stain,
                 Crack = crack,
-                Moss = moss,
-                Rust = rust,
+                Moss = 0f,
+                Rust = 0f,
                 Graffiti = graffiti,
             };
         }
