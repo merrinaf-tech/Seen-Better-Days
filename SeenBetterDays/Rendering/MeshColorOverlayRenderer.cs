@@ -603,6 +603,27 @@ namespace SeenBetterDays.Rendering
                 return;
             }
 
+            // MeshColorSystem copies CustomMeshColor into the live MeshColor buffer. Removing the
+            // override stops future copies, but it does not put back what the buffer contained
+            // before the copy; without this step a building held at Maintained still displays
+            // the last weathered colour. Copy the snapshot out before any structural change,
+            // then restore it through a fresh buffer handle afterwards.
+            ColorSet[] pristineColours = null;
+            if (m_EntityManager.HasBuffer<PristineMeshColor>(building))
+            {
+                DynamicBuffer<PristineMeshColor> pristine =
+                    m_EntityManager.GetBuffer<PristineMeshColor>(building, true);
+
+                if (pristine.Length > 0)
+                {
+                    pristineColours = new ColorSet[pristine.Length];
+                    for (int i = 0; i < pristine.Length; i++)
+                    {
+                        pristineColours[i] = pristine[i].m_ColorSet;
+                    }
+                }
+            }
+
             if (m_EntityManager.HasBuffer<CustomMeshColor>(building))
             {
                 m_EntityManager.RemoveComponent<CustomMeshColor>(building);
@@ -618,6 +639,17 @@ namespace SeenBetterDays.Rendering
             // player's own recolour is real work and is not in this POC.
 
             Touch(building);
+
+            if (pristineColours != null && m_EntityManager.HasBuffer<MeshColor>(building))
+            {
+                DynamicBuffer<MeshColor> live = m_EntityManager.GetBuffer<MeshColor>(building);
+                live.ResizeUninitialized(pristineColours.Length);
+
+                for (int i = 0; i < pristineColours.Length; i++)
+                {
+                    live[i] = new MeshColor { m_ColorSet = pristineColours[i] };
+                }
+            }
         }
 
         /// <summary>
