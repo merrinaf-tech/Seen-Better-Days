@@ -65,17 +65,21 @@ building-specific action.
 
 ## Latest verified run
 
-The 2026-09-18 in-game run demonstrated automatic detail on several buildings with 8–10 marks,
-all four facades represented and no placements outside the mesh. The save guard removed 1,560
-colour overrides and 30 decal entities before saving, and the session logged no warnings or
-errors.
+The 2026-09-19 in-game run verified the final surface-collection and allocation path on a dense
+district. It produced 258 detail events across 239 unique buildings, with 6–24 marks per building
+and a 12.6 average. All four facades and all six detail families were represented. Of 3,256 placed
+marks, 3,249 used the collected wall surface directly, seven used nearest-mesh recovery and none
+was skipped. Nineteen buildings were rebuilt after leaving and re-entering the detail radius. The
+session logged no warnings or errors.
 
-The currently installed build adds surface collection once per building, proportional mark
-budgets up to 24, deterministic family allocation, minimum visible detail for eligible buildings
-and exclusion of `ExclusiveGround` assets such as road arrows. These last changes were compiled
-after that run and still need visual and performance validation in game.
+The `ExclusiveGround` filter was also active: the automatic pool fell from 675 to 650 decals and
+the former road-arrow and sports-field candidates disappeared. This verifies the implementation;
+visual density and frame-time behaviour remain under review during the current play test.
 
-During that validation, check:
+The 2026-09-18 save test remains the latest serialization check. The save guard removed 1,560
+colour overrides and 30 decal entities before saving, with no warnings or errors.
+
+During visual validation, check:
 
 1. mark density at 8%, 22%, 47%, 72% and 100% weathering;
 2. whether large buildings receive more coverage without looking saturated;
