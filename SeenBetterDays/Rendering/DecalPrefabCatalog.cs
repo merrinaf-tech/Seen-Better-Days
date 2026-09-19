@@ -64,6 +64,12 @@ namespace SeenBetterDays.Rendering
         public OverlayFamily Families;
 
         /// <summary>
+        /// Families this decal may supply to the live automatic layer. Unlike
+        /// <see cref="Families"/>, this is granted only by the explicit source whitelist.
+        /// </summary>
+        public OverlayFamily AutomaticFamilies;
+
+        /// <summary>
         /// Whether this decal may be put on a wall.
         ///
         /// The layer mask alone is not enough, and trusting it put a road arrow on the side of an
@@ -104,8 +110,8 @@ namespace SeenBetterDays.Rendering
         public override string ToString()
         {
             return string.Format(
-                "{0} [decalLayers={1} families={2} size=({3:0.0},{4:0.0},{5:0.0}) meshLayers={6} geometryFlags={7} minLod={8}{9}]",
-                Name, LayerMask, Families, Size.x, Size.y, Size.z, Layers, Flags, MinLod,
+                "{0} [decalLayers={1} families={2} autoFamilies={3} size=({4:0.0},{5:0.0},{6:0.0}) meshLayers={7} geometryFlags={8} minLod={9}{10}]",
+                Name, LayerMask, Families, AutomaticFamilies, Size.x, Size.y, Size.z, Layers, Flags, MinLod,
                 Inspected
                     ? string.Format(" baseColor={0} smoothness={1:0.00} normalOpacity={2:0.00}",
                         HasBaseColorMap, Smoothness, NormalOpacity)
@@ -122,11 +128,10 @@ namespace SeenBetterDays.Rendering
     ///
     ///   - We never copy or redistribute anyone's texture. We reference prefabs the game has
     ///     already loaded, by entity, and nothing else.
-    ///   - We never treat "this decal exists" as "this decal is appropriate". Automatic use is
-    ///     restricted to decals whose name matches an explicit keyword list; everything else is
-    ///     catalogued, logged and reachable only through a deliberate debug hotkey. A real
-    ///     opt-in scheme (provider metadata, a whitelist, a naming contract) is a later job -
-    ///     see docs/RENDERING_POC.md, "External decal packs".
+    ///   - We never treat "this decal exists" as "this decal is appropriate". Automatic use
+    ///     requires both an approved source pack and a family keyword in the individual prefab;
+    ///     everything else is catalogued, logged and reachable only through a deliberate debug
+    ///     hotkey.
     /// </summary>
     public sealed class DecalPrefabCatalog
     {
@@ -150,6 +155,22 @@ namespace SeenBetterDays.Rendering
             new KeyValuePair<string, OverlayFamily>("grime", OverlayFamily.Dirt),
             new KeyValuePair<string, OverlayFamily>("soot", OverlayFamily.Dirt),
             new KeyValuePair<string, OverlayFamily>("trash", OverlayFamily.Dirt),
+        };
+
+        /// <summary>
+        /// Asset packs explicitly approved for automatic placement, paired with the only family
+        /// each pack may supply. Prefab names created by Extra Assets Importer begin with their
+        /// source pack name, which gives us a stable boundary between discovery and endorsement.
+        ///
+        /// Keep this list deliberately small. A keyword such as "stain" can occur in a puddle
+        /// pack and "graffiti" can occur in a forty-metre mural pack; neither fact makes every
+        /// asset in that mod suitable for a random building facade.
+        /// </summary>
+        private static readonly KeyValuePair<string, OverlayFamily>[] s_ApprovedAutomaticSources =
+        {
+            new KeyValuePair<string, OverlayFamily>("Stains and Leakage Decal Pack", OverlayFamily.Stain),
+            new KeyValuePair<string, OverlayFamily>("Scribbles & Tags Decal Pack", OverlayFamily.Graffiti),
+            new KeyValuePair<string, OverlayFamily>("Cracks and Damage Decal Pack", OverlayFamily.Crack),
         };
 
         /// <summary>
@@ -178,7 +199,7 @@ namespace SeenBetterDays.Rendering
             get { return m_BuildingCapable; }
         }
 
-        /// <summary>Building-capable decals big enough to be worth placing automatically.</summary>
+        /// <summary>Whitelisted building-capable decals big enough to place automatically.</summary>
         public List<DecalPrefabInfo> AutoPool
         {
             get { return m_AutoPool; }
@@ -448,7 +469,9 @@ namespace SeenBetterDays.Rendering
 
                     m_BuildingCapable.Add(info);
 
-                    if (info.SmallestEdge >= MinAutoEdge)
+                    info.AutomaticFamilies = ClassifyForAutomaticUse(info.Name, info.Families);
+                    if (info.SmallestEdge >= MinAutoEdge
+                        && info.AutomaticFamilies != OverlayFamily.None)
                     {
                         m_AutoPool.Add(info);
                     }
@@ -592,10 +615,46 @@ namespace SeenBetterDays.Rendering
         }
 
         /// <summary>
-        /// Picks a decal for a family, deterministically in the seed. Falls back to any
-        /// building-capable decal so the proof of concept still shows something on an install
-        /// that has no recognisably named weathering decals at all - the fallback is reported
-        /// through <paramref name="wasFamilyMatch"/> so the log never implies a real match.
+        /// Applies the source whitelist and narrows a prefab to the family approved for that
+        /// source. Requiring both an approved source and a matching asset name prevents a future
+        /// mixed pack from contributing unrelated objects merely because its package is trusted.
+        /// </summary>
+        private static OverlayFamily ClassifyForAutomaticUse(string name, OverlayFamily namedFamilies)
+        {
+            if (string.IsNullOrEmpty(name) || namedFamilies == OverlayFamily.None)
+            {
+                return OverlayFamily.None;
+            }
+
+            for (int i = 0; i < s_ApprovedAutomaticSources.Length; i++)
+            {
+                KeyValuePair<string, OverlayFamily> source = s_ApprovedAutomaticSources[i];
+                if (name.StartsWith(source.Key, StringComparison.OrdinalIgnoreCase))
+                {
+                    return namedFamilies & source.Value;
+                }
+            }
+
+            return OverlayFamily.None;
+        }
+
+        public bool HasAutomaticFamily(OverlayFamily family)
+        {
+            for (int i = 0; i < m_AutoPool.Count; i++)
+            {
+                if ((m_AutoPool[i].AutomaticFamilies & family) != 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Picks a decal for a family, deterministically in the seed. The live path is strict: if
+        /// the whitelist has no matching prefab it returns null instead of substituting unrelated
+        /// artwork. The broad fallback survives only behind the explicit non-building diagnostic.
         /// </summary>
         public DecalPrefabInfo Pick(OverlayFamily family, bool allowNonBuildingDecals, ref Unity.Mathematics.Random rng, out bool wasFamilyMatch)
         {
@@ -604,8 +663,12 @@ namespace SeenBetterDays.Rendering
             List<DecalPrefabInfo> pool = allowNonBuildingDecals ? m_All : m_AutoPool;
             if (pool.Count == 0)
             {
-                // Better a decal that is too small than none at all, and the log says which.
-                pool = allowNonBuildingDecals ? m_All : m_BuildingCapable;
+                pool = allowNonBuildingDecals ? m_All : null;
+                if (pool == null)
+                {
+                    return null;
+                }
+
                 if (pool.Count == 0)
                 {
                     return null;
@@ -615,7 +678,10 @@ namespace SeenBetterDays.Rendering
             int matches = 0;
             for (int i = 0; i < pool.Count; i++)
             {
-                if ((pool[i].Families & family) != 0)
+                OverlayFamily available = allowNonBuildingDecals
+                    ? pool[i].Families
+                    : pool[i].AutomaticFamilies;
+                if ((available & family) != 0)
                 {
                     matches++;
                 }
@@ -627,14 +693,17 @@ namespace SeenBetterDays.Rendering
                 int wanted = rng.NextInt(matches);
                 for (int i = 0; i < pool.Count; i++)
                 {
-                    if ((pool[i].Families & family) != 0 && wanted-- == 0)
+                    OverlayFamily available = allowNonBuildingDecals
+                        ? pool[i].Families
+                        : pool[i].AutomaticFamilies;
+                    if ((available & family) != 0 && wanted-- == 0)
                     {
                         return pool[i];
                     }
                 }
             }
 
-            return pool[rng.NextInt(pool.Count)];
+            return allowNonBuildingDecals ? pool[rng.NextInt(pool.Count)] : null;
         }
 
         public string Describe(int maxLines)
@@ -642,13 +711,27 @@ namespace SeenBetterDays.Rendering
             StringBuilder sb = new StringBuilder();
             sb.AppendFormat(
                 "decal catalogue: {0} object prefabs scanned, {1} decals found, {2} able to draw on buildings, "
-              + "{3} of those big enough to place automatically (shortest edge >= {4}m)",
+              + "{3} whitelisted and big enough to place automatically (shortest edge >= {4}m)",
                 TotalObjectPrefabsScanned, m_All.Count, m_BuildingCapable.Count, m_AutoPool.Count, MinAutoEdge);
+
+            sb.AppendLine();
+            sb.Append("  automatic source whitelist: ");
+            for (int i = 0; i < s_ApprovedAutomaticSources.Length; i++)
+            {
+                if (i > 0)
+                {
+                    sb.Append(", ");
+                }
+
+                sb.Append(s_ApprovedAutomaticSources[i].Key)
+                  .Append(" -> ")
+                  .Append(s_ApprovedAutomaticSources[i].Value);
+            }
 
             if (Largest != null)
             {
                 sb.AppendLine();
-                sb.Append("  largest: ").Append(Largest.ToString());
+                sb.Append("  largest building-capable (diagnostic only): ").Append(Largest.ToString());
             }
 
             // Biggest first, not alphabetically first: an alphabetical listing of 1,696 decals

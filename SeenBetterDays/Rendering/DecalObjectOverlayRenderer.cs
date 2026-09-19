@@ -848,6 +848,15 @@ namespace SeenBetterDays.Rendering
 
             for (int i = 0; i < s_Families.Length; i++)
             {
+                // The automatic catalogue is source-whitelisted. Do not reserve part of this
+                // building's finite budget for a family for which no approved asset is installed.
+                if (ForcedDecal == null
+                    && !AllowNonBuildingDecals
+                    && !m_Catalog.HasAutomaticFamily(s_Families[i]))
+                {
+                    continue;
+                }
+
                 float intensity = math.saturate(profile.GetIntensity(s_Families[i]));
                 if (intensity <= 0.01f)
                 {
@@ -982,6 +991,13 @@ namespace SeenBetterDays.Rendering
 
             foreach (OverlayFamily family in s_Families)
             {
+                if (ForcedDecal == null
+                    && !AllowNonBuildingDecals
+                    && !m_Catalog.HasAutomaticFamily(family))
+                {
+                    continue;
+                }
+
                 float intensity = math.saturate(profile.GetIntensity(family));
                 if (intensity > best)
                 {

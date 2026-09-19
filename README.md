@@ -18,6 +18,10 @@ This is a private developer build. The rendering investigation is recorded in
   with incompatible colour channels are left unchanged rather than repainted incorrectly.
 - Decals are created inside 200 m of the camera and removed beyond 280 m. Buildings below 8%
   weathering use colour alone.
+- Automatic decals come only from an explicit source whitelist. The current approved packs are
+  `Stains and Leakage Decal Pack`, `Scribbles & Tags Decal Pack` and
+  `Cracks and Damage Decal Pack`; each may supply only its matching family. Missing families stay
+  absent instead of being replaced with unrelated artwork.
 - Placement uses real mesh surfaces. The facade bounds express the intended region; collected wall
   triangles supply the actual position and normal.
 - Nothing is stored in the city. Colour overrides and decal entities are removed during
@@ -73,8 +77,9 @@ was skipped. Nineteen buildings were rebuilt after leaving and re-entering the d
 session logged no warnings or errors.
 
 The `ExclusiveGround` filter was also active: the automatic pool fell from 675 to 650 decals and
-the former road-arrow and sports-field candidates disappeared. This verifies the implementation;
-visual density and frame-time behaviour remain under review during the current play test.
+the former road-arrow and sports-field candidates disappeared. That run preceded the strict
+source whitelist. The next build reduces the automatic pool again to the approved packs and
+removes the arbitrary fallback when a family is unavailable; it still needs in-game validation.
 
 The 2026-09-18 save test remains the latest serialization check. The save guard removed 1,560
 colour overrides and 30 decal entities before saving, with no warnings or errors.
