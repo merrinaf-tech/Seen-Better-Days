@@ -1314,6 +1314,51 @@ namespace SeenBetterDays.Rendering
             return true;
         }
 
+        /// <summary>
+        /// Removes the indexed elements and also recovers live elements whose in-memory record
+        /// was lost. This is intentionally reserved for direct player commands: scanning the
+        /// overlay query is cheap for one selected building, but doing it for every automatic
+        /// detail update would make a city-wide pass quadratic.
+        /// </summary>
+        public bool RemoveIncludingUntracked(Entity building)
+        {
+            bool removed = Remove(building);
+
+            // The dictionary is only a fast in-memory index. Saving deliberately clears it,
+            // and a reload or an interrupted apply can lose it too, while the ECS entities may
+            // still be alive until the game's cleanup systems run. For a direct state change,
+            // use the owner stored on WeatheringOverlay as a second source of truth so
+            // Maintained/F1 cannot leave old marks behind merely because their record was lost.
+            int recovered = 0;
+            NativeArray<Entity> live = m_OverlayQuery.ToEntityArray(Allocator.TempJob);
+            try
+            {
+                for (int i = 0; i < live.Length; i++)
+                {
+                    WeatheringOverlay overlay = m_EntityManager.GetComponentData<WeatheringOverlay>(live[i]);
+                    if (overlay.m_Building != building)
+                    {
+                        continue;
+                    }
+
+                    DestroyElement(live[i]);
+                    recovered++;
+                }
+            }
+            finally
+            {
+                live.Dispose();
+            }
+
+            if (recovered > 0 && m_Log != null)
+            {
+                m_Log.Info("Seen Better Days: recovered and removed " + recovered
+                         + " untracked decal entit(ies) from building " + building.Index + ".");
+            }
+
+            return removed || recovered > 0;
+        }
+
         public int RemoveAll()
         {
             int cleared = m_Records.Count;

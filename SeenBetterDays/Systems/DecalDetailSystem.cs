@@ -281,7 +281,7 @@ namespace SeenBetterDays.Systems
                 return false;
             }
 
-            renderer.Remove(building);
+            renderer.RemoveIncludingUntracked(building);
 
             if (!BuildingSurfaceProbe.HasMeshGeometry(EntityManager, building))
             {

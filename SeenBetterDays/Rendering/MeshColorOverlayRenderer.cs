@@ -471,10 +471,11 @@ namespace SeenBetterDays.Rendering
             //
             // Smoothstep puts the slope in the middle instead, so Worn and Neglected separate;
             // mixed only partly with the straight line so that Aged does not vanish; and the
-            // maximum darkening drops from 0.65 to 0.50 so the worst case is a grimy building
-            // rather than a silhouette.
+            // maximum darkening drops from 0.65 to 0.44 so even the last state keeps enough of
+            // the original facade visible, while the same curve moves every intermediate state
+            // with it and preserves the spacing between them.
             float shaped = math.lerp(grime, math.smoothstep(0f, 1f, grime), 0.6f);
-            float darkness = math.clamp(1f - shaped * 0.50f * jitter, 0.5f, 1f);
+            float darkness = math.clamp(1f - shaped * 0.44f * jitter, 0.56f, 1f);
 
             float desaturation = Response == WeatheringResponse.DarknessOnly
                 ? 0f
