@@ -28,7 +28,9 @@ This is a private developer build. The rendering investigation is recorded in
 - Placement uses real mesh surfaces. The facade bounds express the intended region; collected wall
   triangles supply the actual position and normal.
 - Nothing is stored in the city. Colour overrides and decal entities are removed during
-  serialization and rebuilt from data the game already saves.
+  serialization and rebuilt from data the game already saves. Automatic rebuilding and developer
+  hotkeys pause for three seconds after serialization starts, so they cannot structurally modify
+  entities while the save snapshot is still being written.
 
 ## Options
 

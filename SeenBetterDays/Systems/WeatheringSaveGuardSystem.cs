@@ -43,6 +43,11 @@ namespace SeenBetterDays.Systems
         [Preserve]
         protected override void OnUpdate()
         {
+            // Serialize can continue after this system's own update returns. Do not let the next
+            // ModificationEnd pass or a developer hotkey recreate structural changes underneath
+            // the snapshot still being written.
+            SaveMutationGate.BlockAfterSerializationStarts();
+
             int stripped = m_Weathering.SuspendForSave();
             int strippedDecals = m_OverlayTest.SuspendDecalsForSave();
 

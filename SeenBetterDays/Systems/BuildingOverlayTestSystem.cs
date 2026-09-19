@@ -285,6 +285,40 @@ namespace SeenBetterDays.Systems
                 return;
             }
 
+            if (SaveMutationGate.IsBlocked)
+            {
+                // Report a chord that was deliberately refused. The allKeys walk is defensive for
+                // the same reason as the normal read-out below: some keyboard layouts expose
+                // controls whose keyCode accessor is not backed.
+                try
+                {
+                    foreach (UnityEngine.InputSystem.Controls.KeyControl key in keyboard.allKeys)
+                    {
+                        if (key == null || !key.wasPressedThisFrame)
+                        {
+                            continue;
+                        }
+
+                        UnityEngine.InputSystem.Key code = key.keyCode;
+                        if (code != UnityEngine.InputSystem.Key.LeftAlt
+                            && code != UnityEngine.InputSystem.Key.RightAlt
+                            && code != UnityEngine.InputSystem.Key.LeftCtrl
+                            && code != UnityEngine.InputSystem.Key.RightCtrl)
+                        {
+                            Mod.Log.Warn("Seen Better Days: ignored Ctrl+Alt+" + code
+                                       + " while a save is finishing; try again in three seconds.");
+                            break;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Input diagnostics must not make the save-safety path unsafe.
+                }
+
+                return;
+            }
+
             // Only counts down while the modifiers are held, and is only armed once an action
             // has actually fired - so the first press is never swallowed, but a key held a
             // fraction of a second does not re-apply five times and bury the log.

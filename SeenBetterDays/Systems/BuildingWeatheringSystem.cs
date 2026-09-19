@@ -171,6 +171,11 @@ namespace SeenBetterDays.Systems
         [Preserve]
         protected override void OnUpdate()
         {
+            if (SaveMutationGate.IsBlocked)
+            {
+                return;
+            }
+
             // Read live rather than latched at load, so unticking the option takes the weathering
             // off the city while the player is looking at it. A setting that needs a reload to be
             // believed is a setting people do not trust.

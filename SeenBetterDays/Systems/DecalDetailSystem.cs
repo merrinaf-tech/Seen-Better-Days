@@ -141,6 +141,11 @@ namespace SeenBetterDays.Systems
         [Preserve]
         protected override void OnUpdate()
         {
+            if (SaveMutationGate.IsBlocked)
+            {
+                return;
+            }
+
             DecalObjectOverlayRenderer renderer = m_Harness != null ? m_Harness.DecalRenderer : null;
             if (renderer == null || !renderer.IsAvailable)
             {
