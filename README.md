@@ -20,8 +20,11 @@ This is a private developer build. The rendering investigation is recorded in
   weathering use colour alone.
 - Automatic decals come only from an explicit source whitelist. The current approved packs are
   `Stains and Leakage Decal Pack`, `Scribbles & Tags Decal Pack` and
-  `Cracks and Damage Decal Pack`; each may supply only its matching family. Missing families stay
-  absent instead of being replaced with unrelated artwork.
+  `Cracks and Damage Decal Pack`, plus the G87 Wet Decals, Road Repair and Trash packs,
+  `Fallen leaves decals` and `Street Art Decal Pack`. Each may supply only its assigned family.
+  Missing families stay absent instead of being replaced with unrelated artwork. The G87 Wet
+  **Surfaces** pack contains terrain-surface assets rather than decal prefabs and cannot be
+  projected onto buildings by this renderer.
 - Placement uses real mesh surfaces. The facade bounds express the intended region; collected wall
   triangles supply the actual position and normal.
 - Nothing is stored in the city. Colour overrides and decal entities are removed during

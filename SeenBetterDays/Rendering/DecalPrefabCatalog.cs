@@ -141,12 +141,14 @@ namespace SeenBetterDays.Rendering
             new KeyValuePair<string, OverlayFamily>("tag", OverlayFamily.Graffiti),
             new KeyValuePair<string, OverlayFamily>("scribble", OverlayFamily.Graffiti),
             new KeyValuePair<string, OverlayFamily>("streetart", OverlayFamily.Graffiti),
+            new KeyValuePair<string, OverlayFamily>("street art", OverlayFamily.Graffiti),
             new KeyValuePair<string, OverlayFamily>("rust", OverlayFamily.Rust),
             new KeyValuePair<string, OverlayFamily>("corros", OverlayFamily.Rust),
             new KeyValuePair<string, OverlayFamily>("moss", OverlayFamily.Moss),
             new KeyValuePair<string, OverlayFamily>("ivy", OverlayFamily.Moss),
             new KeyValuePair<string, OverlayFamily>("crack", OverlayFamily.Crack),
             new KeyValuePair<string, OverlayFamily>("damage", OverlayFamily.Crack),
+            new KeyValuePair<string, OverlayFamily>("patch", OverlayFamily.Crack),
             new KeyValuePair<string, OverlayFamily>("stain", OverlayFamily.Stain),
             new KeyValuePair<string, OverlayFamily>("leak", OverlayFamily.Stain),
             new KeyValuePair<string, OverlayFamily>("streak", OverlayFamily.Stain),
@@ -155,6 +157,8 @@ namespace SeenBetterDays.Rendering
             new KeyValuePair<string, OverlayFamily>("grime", OverlayFamily.Dirt),
             new KeyValuePair<string, OverlayFamily>("soot", OverlayFamily.Dirt),
             new KeyValuePair<string, OverlayFamily>("trash", OverlayFamily.Dirt),
+            new KeyValuePair<string, OverlayFamily>("leaf", OverlayFamily.Dirt),
+            new KeyValuePair<string, OverlayFamily>("leaves", OverlayFamily.Dirt),
         };
 
         /// <summary>
@@ -171,6 +175,11 @@ namespace SeenBetterDays.Rendering
             new KeyValuePair<string, OverlayFamily>("Stains and Leakage Decal Pack", OverlayFamily.Stain),
             new KeyValuePair<string, OverlayFamily>("Scribbles & Tags Decal Pack", OverlayFamily.Graffiti),
             new KeyValuePair<string, OverlayFamily>("Cracks and Damage Decal Pack", OverlayFamily.Crack),
+            new KeyValuePair<string, OverlayFamily>("G87 Stains and Puddles Decals Wet Pack", OverlayFamily.Stain),
+            new KeyValuePair<string, OverlayFamily>("G87 Road Repair Patch Pack", OverlayFamily.Crack),
+            new KeyValuePair<string, OverlayFamily>("Fallen leaves decals", OverlayFamily.Dirt),
+            new KeyValuePair<string, OverlayFamily>("G87 Trash Decals Dirty Pack", OverlayFamily.Dirt),
+            new KeyValuePair<string, OverlayFamily>("Street Art Decal Pack", OverlayFamily.Graffiti),
         };
 
         /// <summary>
