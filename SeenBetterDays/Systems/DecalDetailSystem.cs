@@ -59,16 +59,6 @@ namespace SeenBetterDays.Systems
         /// </summary>
         private const int StatusReportPasses = 256;
 
-        /// <summary>
-        /// Below this a building is left to its tint alone.
-        ///
-        /// Was 0.18, which in a measured city excluded 141 buildings out of 150 in range - the
-        /// layer was switched on and had almost nothing it was allowed to touch. It is now low
-        /// enough to engage with an ordinary city, and trying costs almost nothing: a building
-        /// whose families all come out at zero marks is rejected before a single ray is cast.
-        /// </summary>
-        private const float MinimumWeathering = 0.08f;
-
         private Game.Rendering.CameraUpdateSystem m_CameraSystem;
         private BuildingOverlayTestSystem m_Harness;
         private EntityQuery m_GrowableQuery;
@@ -324,6 +314,18 @@ namespace SeenBetterDays.Systems
 
             renderer.RemoveIncludingUntracked(building);
 
+            // Maintained is deliberately a decal-free state. Say that before looking for mesh
+            // geometry: a distant Maintained building needs no mesh and will never "pick up"
+            // marks merely because the camera moves closer.
+            if (EntityManager.HasComponent<WeatheringState>(building)
+                && BuildingVisualProfile.StateFor(
+                    EntityManager.GetComponentData<WeatheringState>(building).m_Weathering)
+                    == VisualState.Maintained)
+            {
+                report = "nothing to place at Maintained";
+                return false;
+            }
+
             if (!BuildingSurfaceProbe.HasMeshGeometry(EntityManager, building))
             {
                 report = "the building's mesh is not loaded, so there is nothing to place marks on "
@@ -350,7 +352,10 @@ namespace SeenBetterDays.Systems
             }
 
             WeatheringState state = EntityManager.GetComponentData<WeatheringState>(building);
-            if (state.m_Weathering < MinimumWeathering)
+            // Maintained has every decal family hard-gated to zero. Treating 8-12% as eligible
+            // made the renderer correctly decline the empty profile, but the status report then
+            // called that expected result a placement failure on every scan.
+            if (BuildingVisualProfile.StateFor(state.m_Weathering) == VisualState.Maintained)
             {
                 m_BelowThreshold++;
                 return false;
