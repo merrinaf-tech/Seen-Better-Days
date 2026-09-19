@@ -1064,10 +1064,10 @@ namespace SeenBetterDays.Rendering
                     float marginV = math.min(0.5f, decal.Size.z * 0.5f / math.max(facade.Height, 0.01f));
                     float u = math.lerp(marginU, 1f - marginU, rng.NextFloat());
 
-                    // Weathering belongs low down far more often than high up. Squaring a uniform
-                    // sample biases it downward while keeping the seed deterministic.
-                    float t = rng.NextFloat();
-                    float v = math.lerp(marginV, 1f - marginV, t * t);
+                    float v = math.lerp(
+                        marginV,
+                        1f - marginV,
+                        SampleVerticalPosition(family, ref rng));
 
                     float3 position;
                     quaternion rotation;
@@ -1100,6 +1100,34 @@ namespace SeenBetterDays.Rendering
                     continue;
                 }
             }
+        }
+
+        /// <summary>
+        /// Chooses the height of a mark within the usable facade rectangle.
+        ///
+        /// Ordinary weathering accumulates near the base, so its uniform sample is squared.
+        /// Graffiti follows a U-shaped distribution instead: half starts from the bottom edge,
+        /// half from the top, and the squared distance makes both edges more likely than the
+        /// centre without making the middle impossible.
+        /// </summary>
+        private static float SampleVerticalPosition(
+            OverlayFamily family,
+            ref Unity.Mathematics.Random rng)
+        {
+            float t = rng.NextFloat();
+
+            if (family != OverlayFamily.Graffiti)
+            {
+                return t * t;
+            }
+
+            if (t < 0.5f)
+            {
+                return 2f * t * t;
+            }
+
+            float distanceFromTop = 1f - t;
+            return 1f - 2f * distanceFromTop * distanceFromTop;
         }
 
         /// <summary>
