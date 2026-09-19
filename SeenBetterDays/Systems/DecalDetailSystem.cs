@@ -82,6 +82,7 @@ namespace SeenBetterDays.Systems
         /// look identical from the outside; the difference has to be something it says.
         /// </summary>
         private int m_Built;
+        private int m_Removed;
         private int m_InRange;
         private int m_BelowThreshold;
         private int m_MeshNotReady;
@@ -197,7 +198,10 @@ namespace SeenBetterDays.Systems
                     {
                         if (has)
                         {
-                            renderer.Remove(building);
+                            if (renderer.Remove(building))
+                            {
+                                m_Removed++;
+                            }
                         }
 
                         continue;
@@ -228,7 +232,10 @@ namespace SeenBetterDays.Systems
             if (++m_Passes >= StatusReportPasses)
             {
                 Mod.Log.Info("Seen Better Days: decal detail layer - " + m_Built
-                           + " building(s) detailed, " + m_InRange + " seen in range, "
+                           + " building(s) detailed, " + m_Removed
+                           + " removed after leaving the radius, "
+                           + renderer.TrackedBuildingCount + " currently detailed, "
+                           + m_InRange + " seen in range, "
                            + m_BelowThreshold + " too lightly weathered to bother, "
                            + m_MeshNotReady + " whose mesh is not loaded yet, "
                            + m_NoWeatheringState + " awaiting a weathering state, "
@@ -240,6 +247,7 @@ namespace SeenBetterDays.Systems
 
                 m_Passes = 0;
                 m_Built = 0;
+                m_Removed = 0;
                 m_InRange = 0;
                 m_BelowThreshold = 0;
                 m_MeshNotReady = 0;
