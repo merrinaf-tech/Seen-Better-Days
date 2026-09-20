@@ -1468,7 +1468,9 @@ namespace SeenBetterDays.Rendering
                     continue;
                 }
 
-                if (m_EntityManager.Exists(building) && !m_EntityManager.HasComponent<Deleted>(building))
+                if (m_EntityManager.Exists(building)
+                    && !m_EntityManager.HasComponent<Deleted>(building)
+                    && !m_EntityManager.HasComponent<UnderConstruction>(building))
                 {
                     continue;
                 }
@@ -1490,7 +1492,8 @@ namespace SeenBetterDays.Rendering
             {
                 if (m_Log != null)
                 {
-                    m_Log.Info("Seen Better Days: building " + dead[i].Index + " is gone, removing its overlay.");
+                    m_Log.Info("Seen Better Days: building " + dead[i].Index
+                             + " is gone or under construction, removing its overlay.");
                 }
 
                 Remove(dead[i]);

@@ -158,8 +158,17 @@ namespace SeenBetterDays.Systems
             m_CatalogueBuilt = false;
 
             // Overlays are runtime-only. Anything still tracked belongs to the world we just
-            // left, so drop it rather than carry stale entity ids into the new one.
+            // left, so drop it rather than carry stale entity ids into the new one. Sweep the
+            // world too: the serializable marker is a recovery signature for an overlay object
+            // that survived an interrupted save after its in-memory record was lost.
             m_Renderer.RemoveAll();
+            int recovered = m_Renderer.SweepStrayOverlays();
+
+            if (recovered > 0)
+            {
+                Mod.Log.Info("Seen Better Days: removed " + recovered
+                           + " weathering decal entit(ies) recovered while loading.");
+            }
 
             Mod.Log.Info("Seen Better Days: game loading complete (purpose=" + purpose + ", mode=" + mode
                        + "), overlay harness " + (m_InGame ? "armed." : "idle."));

@@ -282,7 +282,9 @@ namespace SeenBetterDays.Systems
             {
                 for (int i = 0; i < buildings.Length; i++)
                 {
-                    if (renderer.Remove(buildings[i]))
+                    // Also scan the component marker. A save/reload or interrupted apply can
+                    // lose the dictionary record while the overlay entity is still alive.
+                    if (renderer.RemoveIncludingUntracked(buildings[i]))
                     {
                         m_Removed++;
                     }

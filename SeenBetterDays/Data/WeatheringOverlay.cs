@@ -1,3 +1,4 @@
+using Colossal.Serialization.Entities;
 using Unity.Entities;
 
 namespace SeenBetterDays.Data
@@ -12,12 +13,13 @@ namespace SeenBetterDays.Data
     /// ours never will be. Keeping the link in our own component means the game's sub-object
     /// bookkeeping never sees these entities, and their lifetime is entirely ours.
     ///
-    /// It is also not <see cref="Colossal.Serialization.Entities.ISerializable"/>: overlays are
-    /// runtime-only and are meant to be rebuilt from the stored profile, not saved as geometry.
-    /// The tag still lets us sweep up entities whose owning record was lost - after a mod
-    /// reload, say - without keeping a second index.
+    /// Overlays are runtime-only and are meant to be removed before a save. The marker itself is
+    /// serializable as a recovery signature: if a crash or interrupted serialization preserves
+    /// an overlay object anyway, the next load can still distinguish it from a user decal and
+    /// delete it. The building reference is intentionally not restored because every surviving
+    /// overlay is swept before play resumes.
     /// </summary>
-    public struct WeatheringOverlay : IComponentData, IQueryTypeParameter
+    public struct WeatheringOverlay : IComponentData, IQueryTypeParameter, ISerializable
     {
         /// <summary>The building this overlay is drawn on.</summary>
         public Entity m_Building;
@@ -30,6 +32,17 @@ namespace SeenBetterDays.Data
         {
             m_Building = building;
             m_Family = (int)family;
+        }
+
+        public void Serialize<TWriter>(TWriter writer) where TWriter : IWriter
+        {
+            writer.Write(m_Family);
+        }
+
+        public void Deserialize<TReader>(TReader reader) where TReader : IReader
+        {
+            reader.Read(out m_Family);
+            m_Building = Entity.Null;
         }
     }
 }
