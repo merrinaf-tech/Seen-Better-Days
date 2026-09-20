@@ -170,16 +170,37 @@ namespace SeenBetterDays.Rendering
         /// pack and "graffiti" can occur in a forty-metre mural pack; neither fact makes every
         /// asset in that mod suitable for a random building facade.
         /// </summary>
-        private static readonly KeyValuePair<string, OverlayFamily>[] s_ApprovedAutomaticSources =
+        private struct AutomaticSourceRule
         {
-            new KeyValuePair<string, OverlayFamily>("Stains and Leakage Decal Pack", OverlayFamily.Stain),
-            new KeyValuePair<string, OverlayFamily>("Scribbles & Tags Decal Pack", OverlayFamily.Graffiti),
-            new KeyValuePair<string, OverlayFamily>("Cracks and Damage Decal Pack", OverlayFamily.Crack),
-            new KeyValuePair<string, OverlayFamily>("G87 Stains and Puddles Decals Wet Pack", OverlayFamily.Stain),
-            new KeyValuePair<string, OverlayFamily>("G87 Road Repair Patch Pack", OverlayFamily.Crack),
-            new KeyValuePair<string, OverlayFamily>("Fallen leaves decals", OverlayFamily.Dirt),
-            new KeyValuePair<string, OverlayFamily>("G87 Trash Decals Dirty Pack", OverlayFamily.Dirt),
-            new KeyValuePair<string, OverlayFamily>("Street Art Decal Pack", OverlayFamily.Graffiti),
+            public string Prefix;
+            public OverlayFamily AssetFamily;
+            public OverlayFamily AutomaticFamily;
+
+            public AutomaticSourceRule(
+                string prefix,
+                OverlayFamily assetFamily,
+                OverlayFamily automaticFamily)
+            {
+                Prefix = prefix;
+                AssetFamily = assetFamily;
+                AutomaticFamily = automaticFamily;
+            }
+        }
+
+        private static readonly AutomaticSourceRule[] s_ApprovedAutomaticSources =
+        {
+            // Leakage is visually quieter than the broad black rectangles in the road-repair
+            // pack, so it supplies the early damage slot. Road repair is kept for the final,
+            // heavily decayed state. AssetFamily still validates what each source contains;
+            // AutomaticFamily decides at which visual stage it becomes available.
+            new AutomaticSourceRule("Stains and Leakage Decal Pack", OverlayFamily.Stain, OverlayFamily.Crack),
+            new AutomaticSourceRule("Scribbles & Tags Decal Pack", OverlayFamily.Graffiti, OverlayFamily.Graffiti),
+            new AutomaticSourceRule("Cracks and Damage Decal Pack", OverlayFamily.Crack, OverlayFamily.Crack),
+            new AutomaticSourceRule("G87 Stains and Puddles Decals Wet Pack", OverlayFamily.Stain, OverlayFamily.Stain),
+            new AutomaticSourceRule("G87 Road Repair Patch Pack", OverlayFamily.Crack, OverlayFamily.Stain),
+            new AutomaticSourceRule("Fallen leaves decals", OverlayFamily.Dirt, OverlayFamily.Dirt),
+            new AutomaticSourceRule("G87 Trash Decals Dirty Pack", OverlayFamily.Dirt, OverlayFamily.Dirt),
+            new AutomaticSourceRule("Street Art Decal Pack", OverlayFamily.Graffiti, OverlayFamily.Graffiti),
         };
 
         /// <summary>
@@ -637,10 +658,12 @@ namespace SeenBetterDays.Rendering
 
             for (int i = 0; i < s_ApprovedAutomaticSources.Length; i++)
             {
-                KeyValuePair<string, OverlayFamily> source = s_ApprovedAutomaticSources[i];
-                if (name.StartsWith(source.Key, StringComparison.OrdinalIgnoreCase))
+                AutomaticSourceRule source = s_ApprovedAutomaticSources[i];
+                if (name.StartsWith(source.Prefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    return namedFamilies & source.Value;
+                    return (namedFamilies & source.AssetFamily) != 0
+                        ? source.AutomaticFamily
+                        : OverlayFamily.None;
                 }
             }
 
@@ -743,9 +766,18 @@ namespace SeenBetterDays.Rendering
                     sb.Append(", ");
                 }
 
-                sb.Append(s_ApprovedAutomaticSources[i].Key)
+                AutomaticSourceRule source = s_ApprovedAutomaticSources[i];
+                sb.Append(source.Prefix);
+                if (source.AssetFamily != source.AutomaticFamily)
+                {
+                    sb.Append(" [")
+                      .Append(source.AssetFamily)
+                      .Append(" assets]");
+                }
+
+                sb
                   .Append(" -> ")
-                  .Append(s_ApprovedAutomaticSources[i].Value);
+                  .Append(source.AutomaticFamily);
             }
 
             if (Largest != null)
