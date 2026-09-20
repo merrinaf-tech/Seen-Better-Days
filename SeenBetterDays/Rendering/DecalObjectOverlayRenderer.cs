@@ -75,6 +75,7 @@ namespace SeenBetterDays.Rendering
             public float3 Position;
             public quaternion Rotation;
             public OverlayFamily Family;
+            public int FacadeIndex;
         }
 
         private readonly EntityManager m_EntityManager;
@@ -225,10 +226,12 @@ namespace SeenBetterDays.Rendering
             m_SurfaceRecoveries = 0;
             m_SurfaceMisses = 0;
             m_SurfaceSides = 0;
+            m_PlannedFacadeMask = 0;
             m_NextFacade = rng.NextInt(0, m_Facades.Count);
 
             PlanAllFamilies(building, profile, ref rng);
             PlanMinimumMark(building, profile, ref rng);
+            PlanMinimumMarkPerFacade(building, profile, ref rng);
 
             if (m_Pending.Count == 0)
             {
@@ -455,6 +458,7 @@ namespace SeenBetterDays.Rendering
                     Position = position,
                     Rotation = facade.DecalRotation(InvertProjection),
                     Family = decal.Families,
+                    FacadeIndex = -1,
                 });
 
                 sb.AppendLine();
@@ -506,6 +510,7 @@ namespace SeenBetterDays.Rendering
                 Position = position,
                 Rotation = quaternion.identity,
                 Family = OverlayFamily.None,
+                FacadeIndex = -1,
             });
 
             Remove(Entity.Null);
@@ -574,6 +579,7 @@ namespace SeenBetterDays.Rendering
                 Position = hitPosition + up * NormalOffsetMetres,
                 Rotation = quaternion.LookRotationSafe(tangent, up),
                 Family = OverlayFamily.None,
+                FacadeIndex = -1,
             });
 
             Remove(Entity.Null);
@@ -600,6 +606,7 @@ namespace SeenBetterDays.Rendering
         private int m_SurfaceMisses;
         private int m_SurfaceSides;
         private int m_NextFacade;
+        private int m_PlannedFacadeMask;
 
         public string LastPlacementReport
         {
@@ -624,8 +631,23 @@ namespace SeenBetterDays.Rendering
                 return families + " | wall scale " + m_WallScale.ToString("0.0") + "x | "
                      + m_SurfaceHits + " raycast hit(s), " + m_SurfaceRecoveries
                      + " nearest-mesh recovery hit(s), " + m_SurfaceMisses
-                     + " skipped (no mesh surface), facades=" + DescribeSurfaceSides();
+                     + " skipped (no mesh surface), facades=" + DescribeSurfaceSides()
+                     + ", covered=" + CountPlannedFacades() + "/" + m_Facades.Count;
             }
+        }
+
+        private int CountPlannedFacades()
+        {
+            int count = 0;
+            for (int i = 0; i < m_Facades.Count; i++)
+            {
+                if ((m_PlannedFacadeMask & (1 << i)) != 0)
+                {
+                    count++;
+                }
+            }
+
+            return count;
         }
 
         private string DescribeSurfaceSides()
@@ -1031,6 +1053,120 @@ namespace SeenBetterDays.Rendering
             OverlayFamily.Graffiti,
         };
 
+        /// <summary>
+        /// Gives every usable side of the building at least one mark.
+        ///
+        /// The ordinary planner chooses a prefab against the largest facade, then walks around
+        /// the building. That spreads marks well when the footprint is roughly square, but on a
+        /// long thin building the chosen projector can be wider than either short end. Both ends
+        /// are skipped and all the visible weathering accumulates on the long walls.
+        ///
+        /// This recovery pass works the other way round: for each side still empty it asks the
+        /// catalogue for a prefab that fits that side specifically. A side only earns its minimum
+        /// when a mesh raycast finds real building geometry, so party walls, gaps between wings
+        /// and facade rectangles with no usable surface are not decorated by force.
+        /// </summary>
+        private void PlanMinimumMarkPerFacade(
+            Entity building,
+            in BuildingVisualProfile profile,
+            ref Unity.Mathematics.Random rng)
+        {
+            int firstFacade = m_NextFacade;
+
+            for (int offset = 0; offset < m_Facades.Count; offset++)
+            {
+                int facadeIndex = (firstFacade + offset) % m_Facades.Count;
+                if ((m_PlannedFacadeMask & (1 << facadeIndex)) != 0)
+                {
+                    continue;
+                }
+
+                BuildingFacade facade = m_Facades[facadeIndex];
+                OverlayFamily tried = OverlayFamily.None;
+
+                // Prefer the strongest active family, but try the others too. The strongest
+                // family may have no approved projector small enough for this particular side.
+                for (int familyAttempt = 0; familyAttempt < s_Families.Length; familyAttempt++)
+                {
+                    OverlayFamily strongest = OverlayFamily.None;
+                    float best = 0.12f;
+
+                    for (int i = 0; i < s_Families.Length; i++)
+                    {
+                        OverlayFamily candidate = s_Families[i];
+                        if ((tried & candidate) != 0
+                            || (ForcedDecal == null
+                                && !AllowNonBuildingDecals
+                                && !m_Catalog.HasAutomaticFamily(candidate)))
+                        {
+                            continue;
+                        }
+
+                        float intensity = math.saturate(profile.GetIntensity(candidate));
+                        if (intensity > best)
+                        {
+                            best = intensity;
+                            strongest = candidate;
+                        }
+                    }
+
+                    if (strongest == OverlayFamily.None)
+                    {
+                        break;
+                    }
+
+                    tried |= strongest;
+
+                    bool familyMatched;
+                    DecalPrefabInfo decal = ForcedDecal;
+                    if (decal == null)
+                    {
+                        decal = m_Catalog.Pick(
+                            strongest,
+                            AllowNonBuildingDecals,
+                            facade.Width,
+                            facade.Height,
+                            ref rng,
+                            out familyMatched);
+                    }
+
+                    if (decal == null)
+                    {
+                        continue;
+                    }
+
+                    bool planned = false;
+                    for (int placementAttempt = 0;
+                         placementAttempt < PlacementAttemptsPerFacade;
+                         placementAttempt++)
+                    {
+                        if (TryPlanMarkOnFacade(
+                            building,
+                            strongest,
+                            decal,
+                            facadeIndex,
+                            ref rng))
+                        {
+                            planned = true;
+                            break;
+                        }
+                    }
+
+                    if (!planned)
+                    {
+                        continue;
+                    }
+
+                    // Normally the proportional planner leaves room because four sides are far
+                    // below the cap. If it did spend the full budget on fewer sides, replace one
+                    // duplicate rather than exceeding the entity limit.
+                    TrimDuplicateToBuildingBudget();
+                    m_NextFacade = (facadeIndex + 1) % m_Facades.Count;
+                    break;
+                }
+            }
+        }
+
         private void PlanMarks(
             Entity building,
             OverlayFamily family,
@@ -1069,62 +1205,12 @@ namespace SeenBetterDays.Rendering
                 for (int attempt = 0; attempt < maxAttempts; attempt++)
                 {
                     int facadeIndex = (startFacade + attempt) % m_Facades.Count;
-                    BuildingFacade facade = m_Facades[facadeIndex];
-
-                    // A projector cannot be clipped to its owning building. If it overhangs this
-                    // rectangle it can paint an attached neighbour, which is how a Maintained
-                    // row house appeared to retain two stains that actually belonged next door.
-                    if (!AllowNonBuildingDecals
-                        && (decal.Size.x > facade.Width || decal.Size.z > facade.Height))
+                    if (TryPlanMarkOnFacade(building, family, decal, facadeIndex, ref rng))
                     {
-                        continue;
+                        m_NextFacade = (facadeIndex + 1) % m_Facades.Count;
+                        planned = true;
+                        break;
                     }
-
-                    // Keep the decal inside the facade rectangle. A projector that overhangs the
-                    // wall does not merely look wrong - it paints whatever else is behind it.
-                    float marginU = math.min(0.5f, decal.Size.x * 0.5f / math.max(facade.Width, 0.01f));
-                    float marginV = math.min(0.5f, decal.Size.z * 0.5f / math.max(facade.Height, 0.01f));
-                    float u = math.lerp(marginU, 1f - marginU, rng.NextFloat());
-
-                    float v = math.lerp(
-                        marginV,
-                        1f - marginV,
-                        SampleVerticalPosition(family, ref rng));
-
-                    float3 position;
-                    quaternion rotation;
-                    if (!TryResolvePlacement(building, facade, u, v, ref rng, out position, out rotation))
-                    {
-                        continue;
-                    }
-
-                    // The real mesh sample can move away from the rectangle's proposed point.
-                    // Recheck the final centre so the full decal still lies inside the facade.
-                    float3 fromCenter = position - facade.Center;
-                    float halfWidth = facade.Width * 0.5f;
-                    float halfHeight = facade.Height * 0.5f;
-                    if (!AllowNonBuildingDecals
-                        && (math.abs(math.dot(fromCenter, facade.Tangent)) + decal.Size.x * 0.5f > halfWidth
-                            || math.abs(math.dot(fromCenter, facade.Up)) + decal.Size.z * 0.5f > halfHeight))
-                    {
-                        continue;
-                    }
-
-                    m_Pending.Add(new PendingElement
-                    {
-                        Prefab = decal.PrefabEntity,
-                        Position = position,
-                        Rotation = rotation,
-                        Family = family,
-                    });
-
-                    int already;
-                    m_LastFamilies.TryGetValue(family, out already);
-                    m_LastFamilies[family] = already + 1;
-
-                    m_NextFacade = (facadeIndex + 1) % m_Facades.Count;
-                    planned = true;
-                    break;
                 }
 
                 if (!planned)
@@ -1133,6 +1219,118 @@ namespace SeenBetterDays.Rendering
                     // other families: another decal size and another set of samples may succeed.
                     continue;
                 }
+            }
+        }
+
+        private bool TryPlanMarkOnFacade(
+            Entity building,
+            OverlayFamily family,
+            DecalPrefabInfo decal,
+            int facadeIndex,
+            ref Unity.Mathematics.Random rng)
+        {
+            BuildingFacade facade = m_Facades[facadeIndex];
+
+            // A projector cannot be clipped to its owning building. If it overhangs this
+            // rectangle it can paint an attached neighbour, which is how a Maintained
+            // row house appeared to retain two stains that actually belonged next door.
+            if (!AllowNonBuildingDecals
+                && (decal.Size.x > facade.Width || decal.Size.z > facade.Height))
+            {
+                return false;
+            }
+
+            // Keep the decal inside the facade rectangle. A projector that overhangs the
+            // wall does not merely look wrong - it paints whatever else is behind it.
+            float marginU = math.min(0.5f, decal.Size.x * 0.5f / math.max(facade.Width, 0.01f));
+            float marginV = math.min(0.5f, decal.Size.z * 0.5f / math.max(facade.Height, 0.01f));
+            float u = math.lerp(marginU, 1f - marginU, rng.NextFloat());
+
+            float v = math.lerp(
+                marginV,
+                1f - marginV,
+                SampleVerticalPosition(family, ref rng));
+
+            float3 position;
+            quaternion rotation;
+            if (!TryResolvePlacement(building, facade, u, v, ref rng, out position, out rotation))
+            {
+                return false;
+            }
+
+            // The real mesh sample can move away from the rectangle's proposed point. Recheck
+            // the final centre so the full decal still lies inside the facade.
+            float3 fromCenter = position - facade.Center;
+            float halfWidth = facade.Width * 0.5f;
+            float halfHeight = facade.Height * 0.5f;
+            if (!AllowNonBuildingDecals
+                && (math.abs(math.dot(fromCenter, facade.Tangent)) + decal.Size.x * 0.5f > halfWidth
+                    || math.abs(math.dot(fromCenter, facade.Up)) + decal.Size.z * 0.5f > halfHeight))
+            {
+                return false;
+            }
+
+            m_Pending.Add(new PendingElement
+            {
+                Prefab = decal.PrefabEntity,
+                Position = position,
+                Rotation = rotation,
+                Family = family,
+                FacadeIndex = facadeIndex,
+            });
+
+            int already;
+            m_LastFamilies.TryGetValue(family, out already);
+            m_LastFamilies[family] = already + 1;
+            m_PlannedFacadeMask |= 1 << facadeIndex;
+            return true;
+        }
+
+        private void TrimDuplicateToBuildingBudget()
+        {
+            if (m_Pending.Count <= MaxPerBuilding)
+            {
+                return;
+            }
+
+            int[] perFacade = new int[m_Facades.Count];
+            for (int i = 0; i < m_Pending.Count; i++)
+            {
+                int facadeIndex = m_Pending[i].FacadeIndex;
+                if (facadeIndex >= 0 && facadeIndex < perFacade.Length)
+                {
+                    perFacade[facadeIndex]++;
+                }
+            }
+
+            // Keep the mark just added. Because it filled an empty side, a previous side must
+            // contain a duplicate whenever the old plan had already reached the cap.
+            for (int i = m_Pending.Count - 2; i >= 0; i--)
+            {
+                PendingElement candidate = m_Pending[i];
+                if (candidate.FacadeIndex < 0
+                    || candidate.FacadeIndex >= perFacade.Length
+                    || perFacade[candidate.FacadeIndex] <= 1)
+                {
+                    continue;
+                }
+
+                m_Pending.RemoveAt(i);
+
+                int familyCount;
+                if (m_LastFamilies.TryGetValue(candidate.Family, out familyCount))
+                {
+                    if (familyCount <= 1)
+                    {
+                        m_LastFamilies.Remove(candidate.Family);
+                    }
+                    else
+                    {
+                        m_LastFamilies[candidate.Family] = familyCount - 1;
+                    }
+                }
+
+                return;
             }
         }
 
