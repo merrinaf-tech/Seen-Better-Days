@@ -100,6 +100,8 @@ namespace SeenBetterDays.Systems
         private int m_CatchUpBatches;
         private double m_CatchUpWorkMilliseconds;
         private double m_CatchUpMaxBatchMilliseconds;
+        private int m_ResetCooldownUpdates;
+        private bool m_LegacyCleanupPending;
 
         /// <summary>
         /// Buildings whose weathering the player has set by hand, which the simulation leaves
@@ -180,6 +182,7 @@ namespace SeenBetterDays.Systems
             m_RangeKnown = false;
             m_Pinned.Clear();
             m_CatchUpRemaining = 0;
+            m_ResetCooldownUpdates = 0;
 
             // On by default from here. The hotkey came first because both layers were experiments
             // and being able to switch them off was how they were compared; now that they work, a
@@ -187,7 +190,13 @@ namespace SeenBetterDays.Systems
             // The toggle stays for A/B comparison, and belongs in the options page alongside the
             // tooltip switch when that exists.
             Enabled = true;
-            m_FullSweepPending = true;
+            // A save made by an older build can contain both WeatheringState and the vanilla
+            // CustomMeshColor it produced. The in-memory ownership record does not survive a
+            // reload, so applying again would otherwise treat the already dark colour as a new
+            // clean baseline and compound it. Repair those marked leftovers before the first
+            // sweep. Current saves contain neither because WeatheringSaveGuardSystem strips them.
+            m_LegacyCleanupPending = true;
+            m_FullSweepPending = false;
             m_Pinned.Clear();
 
             Mod.Log.Info("Seen Better Days: on load, " + Census());
@@ -205,6 +214,43 @@ namespace SeenBetterDays.Systems
         {
             if (SaveMutationGate.IsBlocked)
             {
+                return;
+            }
+
+            if (Mod.ConsumeCityAppearanceResetRequest())
+            {
+                ResetAndRebuildCityAppearance();
+                return;
+            }
+
+            if (m_LegacyCleanupPending)
+            {
+                m_LegacyCleanupPending = false;
+                int repaired = ClearPersistedWeatheringOnly();
+                if (repaired > 0)
+                {
+                    m_ResetCooldownUpdates = 2;
+                    Mod.Log.Warn("Seen Better Days: repaired " + repaired
+                               + " persisted weathering override(s) from an older or interrupted "
+                               + "session before applying this version. The old colour was not "
+                               + "used as the new baseline.");
+                }
+
+                m_FullSweepPending = true;
+                return;
+            }
+
+            // Removing CustomMeshColor asks the game's rendering systems to restore the prefab
+            // palette. Give them two weathering updates to do that before capturing a new pristine
+            // baseline; applying again in the same pass is exactly how darkening compounds.
+            if (m_ResetCooldownUpdates > 0)
+            {
+                m_ResetCooldownUpdates--;
+                if (m_ResetCooldownUpdates == 0)
+                {
+                    m_FullSweepPending = true;
+                }
+
                 return;
             }
 
@@ -1037,6 +1083,7 @@ namespace SeenBetterDays.Systems
         /// </summary>
         public int PurgeAllCustomColours()
         {
+            int tracked = m_Renderer.RemoveAll();
             NativeArray<Entity> buildings = m_GrowableQuery.ToEntityArray(Allocator.TempJob);
             try
             {
@@ -1046,33 +1093,39 @@ namespace SeenBetterDays.Systems
                 {
                     Entity building = buildings[i];
 
-                    if (!EntityManager.HasBuffer<Game.Rendering.CustomMeshColor>(building))
-                    {
-                        continue;
-                    }
+                    bool changed = false;
 
-                    EntityManager.RemoveComponent<Game.Rendering.CustomMeshColor>(building);
+                    if (EntityManager.HasBuffer<Game.Rendering.CustomMeshColor>(building))
+                    {
+                        EntityManager.RemoveComponent<Game.Rendering.CustomMeshColor>(building);
+                        changed = true;
+                    }
 
                     if (EntityManager.HasBuffer<PristineMeshColor>(building))
                     {
                         EntityManager.RemoveComponent<PristineMeshColor>(building);
+                        changed = true;
                     }
 
                     if (EntityManager.HasComponent<WeatheringState>(building))
                     {
                         EntityManager.RemoveComponent<WeatheringState>(building);
+                        changed = true;
                     }
 
-                    if (!EntityManager.HasComponent<BatchesUpdated>(building))
+                    if (changed && !EntityManager.HasComponent<BatchesUpdated>(building))
                     {
                         EntityManager.AddComponent<BatchesUpdated>(building);
                     }
 
-                    cleared++;
+                    if (changed)
+                    {
+                        cleared++;
+                    }
                 }
 
-                m_Renderer.RemoveAll();
-                return cleared;
+                m_Pinned.Clear();
+                return math.max(cleared, tracked);
             }
             finally
             {
@@ -1084,6 +1137,79 @@ namespace SeenBetterDays.Systems
         public int ResetAll()
         {
             return m_Renderer.RemoveAll();
+        }
+
+        /// <summary>
+        /// Clears only overrides that still carry this mod's serialised WeatheringState marker.
+        /// This runs once after loading and is the migration path from builds that allowed runtime
+        /// colours to enter a save. User recolours on unrelated buildings remain untouched.
+        /// </summary>
+        private int ClearPersistedWeatheringOnly()
+        {
+            NativeArray<Entity> buildings = m_GrowableQuery.ToEntityArray(Allocator.TempJob);
+            try
+            {
+                int cleared = 0;
+
+                for (int i = 0; i < buildings.Length; i++)
+                {
+                    Entity building = buildings[i];
+                    if (!EntityManager.HasComponent<WeatheringState>(building))
+                    {
+                        continue;
+                    }
+
+                    if (EntityManager.HasBuffer<Game.Rendering.CustomMeshColor>(building))
+                    {
+                        EntityManager.RemoveComponent<Game.Rendering.CustomMeshColor>(building);
+                    }
+
+                    if (EntityManager.HasBuffer<PristineMeshColor>(building))
+                    {
+                        EntityManager.RemoveComponent<PristineMeshColor>(building);
+                    }
+
+                    EntityManager.RemoveComponent<WeatheringState>(building);
+
+                    if (!EntityManager.HasComponent<BatchesUpdated>(building))
+                    {
+                        EntityManager.AddComponent<BatchesUpdated>(building);
+                    }
+
+                    cleared++;
+                }
+
+                m_Pinned.Clear();
+                return cleared;
+            }
+            finally
+            {
+                buildings.Dispose();
+            }
+        }
+
+        /// <summary>Performs the explicit options-page repair, then schedules a clean bounded
+        /// rebuild after the renderer has restored the game's palettes.</summary>
+        private void ResetAndRebuildCityAppearance()
+        {
+            BuildingOverlayTestSystem overlays =
+                World.GetExistingSystemManaged<BuildingOverlayTestSystem>();
+            int decals = overlays == null ? 0 : overlays.SuspendDecalsForSave();
+            int buildings = PurgeAllCustomColours();
+
+            m_RangeKnown = false;
+            m_CatchUpRemaining = 0;
+            m_CatchUpProcessed = 0;
+            m_CatchUpBatches = 0;
+            m_CatchUpWorkMilliseconds = 0d;
+            m_CatchUpMaxBatchMilliseconds = 0d;
+            m_FullSweepPending = false;
+            m_ResetCooldownUpdates = 2;
+
+            Mod.Log.Info("Seen Better Days: reset complete - cleared visual state from "
+                       + buildings + " growable(s) and removed " + decals
+                       + " decal entit(ies). Waiting for the original palettes, then rebuilding "
+                       + "once with the current version only.");
         }
 
         [Preserve]

@@ -6,6 +6,7 @@ using Game.SceneFlow;
 using SeenBetterDays.Localization;
 using SeenBetterDays.Settings;
 using SeenBetterDays.Systems;
+using System.Threading;
 
 namespace SeenBetterDays
 {
@@ -31,6 +32,21 @@ namespace SeenBetterDays
 
         /// <summary>The options page. Never null once OnLoad has run.</summary>
         public static SeenBetterDaysSettings Settings { get; private set; }
+
+        private static int s_CityAppearanceResetRequested;
+
+        /// <summary>Queues a city reset for the simulation thread. Settings buttons can also be
+        /// pressed in the main menu, so the request stays pending until a playable city exists.</summary>
+        public static void RequestCityAppearanceReset()
+        {
+            Interlocked.Exchange(ref s_CityAppearanceResetRequested, 1);
+            Log.Info("Seen Better Days: city appearance reset requested from the options page.");
+        }
+
+        internal static bool ConsumeCityAppearanceResetRequest()
+        {
+            return Interlocked.Exchange(ref s_CityAppearanceResetRequested, 0) != 0;
+        }
 
         public void OnLoad(UpdateSystem updateSystem)
         {

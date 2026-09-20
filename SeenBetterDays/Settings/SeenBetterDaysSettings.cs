@@ -18,14 +18,15 @@ namespace SeenBetterDays.Settings
     /// next pass and leaves nothing behind when it is changed back.
     /// </summary>
     [FileLocation("ModsSettings/SeenBetterDays/SeenBetterDays")]
-    [SettingsUIGroupOrder(AppearanceGroup, LayersGroup, DeveloperGroup)]
-    [SettingsUIShowGroupName(AppearanceGroup, LayersGroup, DeveloperGroup)]
+    [SettingsUIGroupOrder(AppearanceGroup, LayersGroup, ResetGroup, DeveloperGroup)]
+    [SettingsUIShowGroupName(AppearanceGroup, LayersGroup, ResetGroup, DeveloperGroup)]
     public class SeenBetterDaysSettings : ModSetting
     {
         public const string MainSection = "Main";
 
         public const string AppearanceGroup = "AppearanceGroup";
         public const string LayersGroup = "LayersGroup";
+        public const string ResetGroup = "ResetGroup";
         public const string DeveloperGroup = "DeveloperGroup";
 
         public const int MinIntensity = 25;
@@ -65,6 +66,22 @@ namespace SeenBetterDays.Settings
         [SettingsUISlider(min = MinIntensity, max = MaxIntensity, step = 5, unit = "percentage")]
         [SettingsUIDisableByCondition(typeof(SeenBetterDaysSettings), nameof(IsWeatheringDisabled))]
         public int Intensity { get; set; } = DefaultIntensity;
+
+        /// <summary>
+        /// Removes every visual override that can have been left by this or an older build, then
+        /// lets the current build calculate the city again from clean game colours.
+        ///
+        /// This is intentionally an explicit, confirmed repair action. Old builds wrote through
+        /// the same CustomMeshColor slot used by recolouring mods, and that slot has no author id;
+        /// a guaranteed clean baseline therefore also clears user recolours on growables.
+        /// </summary>
+        [SettingsUISection(MainSection, ResetGroup)]
+        [SettingsUIButton]
+        [SettingsUIConfirmation]
+        public bool ResetCityAppearance
+        {
+            set { Mod.RequestCityAppearanceReset(); }
+        }
 
         /// <summary>
         /// Shows, under the cursor, how well kept the game thinks a building is and why.
