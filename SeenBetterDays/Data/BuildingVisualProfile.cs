@@ -21,6 +21,11 @@ namespace SeenBetterDays.Data
         /// are what the renderer actually reads.</summary>
         public VisualState State;
 
+        /// <summary>The continuous 0..1 weathering value. Decal families enter at state
+        /// boundaries, while colour follows this directly so crossing a boundary cannot cause
+        /// an abrupt shade change.</summary>
+        public float Weathering;
+
         public float Dirt;
         public float Stain;
         public float Crack;
@@ -90,6 +95,7 @@ namespace SeenBetterDays.Data
             return new BuildingVisualProfile
             {
                 State = state,
+                Weathering = baseIntensity,
                 Seed = seed,
                 Dirt = Vary(1.0f),
                 Stain = Vary(0.8f),
@@ -149,6 +155,7 @@ namespace SeenBetterDays.Data
             return new BuildingVisualProfile
             {
                 State = state,
+                Weathering = w,
                 Seed = seed,
                 Dirt = dirt,
                 Stain = stain,
@@ -175,8 +182,8 @@ namespace SeenBetterDays.Data
             var c = CultureInfo.InvariantCulture;
             return string.Format(
                 c,
-                "{0} seed={1} dirt={2:0.00} stain={3:0.00} crack={4:0.00} moss={5:0.00} rust={6:0.00} graffiti={7:0.00}",
-                State, Seed, Dirt, Stain, Crack, Moss, Rust, Graffiti);
+                "{0} weathering={1:0.00} seed={2} dirt={3:0.00} stain={4:0.00} crack={5:0.00} moss={6:0.00} rust={7:0.00} graffiti={8:0.00}",
+                State, Weathering, Seed, Dirt, Stain, Crack, Moss, Rust, Graffiti);
         }
     }
 }

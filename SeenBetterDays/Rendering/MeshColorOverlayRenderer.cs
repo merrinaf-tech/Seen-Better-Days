@@ -454,32 +454,22 @@ namespace SeenBetterDays.Rendering
             // is why it is applied here at the last moment rather than folded into the profile.
             float scale = Mod.Settings != null ? Mod.Settings.IntensityScale : 1f;
 
-            float grime = math.saturate((profile.Dirt * 0.6f + profile.Stain * 0.4f) * scale);
-
-            var rng = new Unity.Mathematics.Random(profile.Seed == 0u ? 1u : profile.Seed);
-            float jitter = 0.92f + 0.16f * rng.NextFloat();
+            float weathering = math.saturate(profile.Weathering * scale);
 
             // One factor on all three channels: in HSV this lowers V and leaves H and S alone,
             // which is the whole reason this lever is the default one.
-            // Shaped, not linear, and capped well short of black.
-            //
-            // Judged side by side on four identical towers held at Aged, Worn, Neglected and
-            // Decayed: the last was too dark to read as a building, and the middle two were hard
-            // to tell apart. Those are the two complaints a linear ramp produces - it spends its
-            // range at the top, where nobody can use it, and passes through the middle too
-            // quickly, where every real building actually lives.
-            //
-            // Smoothstep puts the slope in the middle instead, so Worn and Neglected separate;
-            // mixed only partly with the straight line so that Aged does not vanish; and the
-            // maximum darkening drops from 0.65 to 0.44 so even the last state keeps enough of
-            // the original facade visible, while the same curve moves every intermediate state
-            // with it and preserves the spacing between them.
-            float shaped = math.lerp(grime, math.smoothstep(0f, 1f, grime), 0.6f);
-            float darkness = math.clamp(1f - shaped * 0.44f * jitter, 0.56f, 1f);
+            // Colour follows the continuous weathering value rather than the active decal
+            // families. When it followed Dirt and Stain, Aged did not change at all (it has only
+            // cracks) and Worn introduced Dirt together with a sudden colour jump. A straight,
+            // shallow ramp makes every test step readable and keeps Decayed far from black:
+            // F1/F2/F3/F4/F5 retain about 100/94.5/88/82/76 per cent of their original light.
+            // No random jitter here: the original instance colours already provide variation,
+            // while jitter can make adjacent test states appear out of order.
+            float darkness = 1f - weathering * 0.25f;
 
             float desaturation = Response == WeatheringResponse.DarknessOnly
                 ? 0f
-                : math.saturate(grime * 0.75f);
+                : weathering * 0.35f;
 
             // Tint multiplicatively, centred on 1, so it bends the hue without changing how
             // bright the surface is.
