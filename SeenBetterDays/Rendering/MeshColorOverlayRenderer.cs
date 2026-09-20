@@ -460,16 +460,21 @@ namespace SeenBetterDays.Rendering
             // which is the whole reason this lever is the default one.
             // Colour follows the continuous weathering value rather than the active decal
             // families. When it followed Dirt and Stain, Aged did not change at all (it has only
-            // cracks) and Worn introduced Dirt together with a sudden colour jump. A straight,
-            // shallow ramp makes every test step readable and keeps Decayed far from black:
-            // F1/F2/F3/F4/F5 retain about 100/94.5/88/82/76 per cent of their original light.
+            // cracks) and Worn introduced Dirt together with a sudden colour jump.
+            //
+            // The response accelerates instead of spending the contrast evenly. Aged should be
+            // only a hint away from Maintained; the larger steps belong between the visibly worse
+            // states. At the five diagnostic values, F1/F2/F3/F4/F5 retain about
+            // 100/98.8/94.5/87/77.4 per cent of their original light. This also leaves enough
+            // separation in the dark end of the scale to distinguish levels 3, 4 and 5.
             // No random jitter here: the original instance colours already provide variation,
             // while jitter can make adjacent test states appear out of order.
-            float darkness = 1f - weathering * 0.25f;
+            float colourWeathering = weathering * weathering;
+            float darkness = 1f - colourWeathering * 0.25f;
 
             float desaturation = Response == WeatheringResponse.DarknessOnly
                 ? 0f
-                : weathering * 0.35f;
+                : colourWeathering * 0.35f;
 
             // Tint multiplicatively, centred on 1, so it bends the hue without changing how
             // bright the surface is.
