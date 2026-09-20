@@ -6,6 +6,7 @@ using Game.Objects;
 using Game.Prefabs;
 using Game.Tools;
 using Game.Zones;
+using System.Diagnostics;
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Entities;
@@ -36,6 +37,14 @@ namespace SeenBetterDays.Systems
         /// <summary>Buildings examined per update. Small on purpose; the whole city comes round
         /// in a few seconds of game time and nothing here is urgent.</summary>
         private const int BuildingsPerUpdate = 256;
+
+        /// <summary>
+        /// Initial catch-up budget. Loading a large city used to recolour every building in one
+        /// update; the 13,824-growable performance test therefore concentrated 12,968 renderer
+        /// writes and their structural changes into a single frame. A bounded batch keeps that
+        /// work measurable and lets the game render between slices.
+        /// </summary>
+        private const int CatchUpBuildingsPerUpdate = 512;
 
         /// <summary>How much the weathering must move before it is worth rewriting colours.
         /// Below this the change would not be visible and the redraw would be waste.</summary>
@@ -83,9 +92,14 @@ namespace SeenBetterDays.Systems
             }
         }
 
-        /// <summary>Set when the system is switched on, so the whole city is brought up to date in
-        /// one pass instead of trickling in over a couple of minutes.</summary>
+        /// <summary>Set when the system is switched on, so a bounded catch-up begins on the next
+        /// update instead of waiting for the ordinary round-robin to revisit the whole city.</summary>
         private bool m_FullSweepPending;
+        private int m_CatchUpRemaining;
+        private int m_CatchUpProcessed;
+        private int m_CatchUpBatches;
+        private double m_CatchUpWorkMilliseconds;
+        private double m_CatchUpMaxBatchMilliseconds;
 
         /// <summary>
         /// Buildings whose weathering the player has set by hand, which the simulation leaves
@@ -165,6 +179,7 @@ namespace SeenBetterDays.Systems
             // one that was here before it.
             m_RangeKnown = false;
             m_Pinned.Clear();
+            m_CatchUpRemaining = 0;
 
             // On by default from here. The hotkey came first because both layers were experiments
             // and being able to switch them off was how they were compared; now that they work, a
@@ -172,6 +187,7 @@ namespace SeenBetterDays.Systems
             // The toggle stays for A/B comparison, and belongs in the options page alongside the
             // tooltip switch when that exists.
             Enabled = true;
+            m_FullSweepPending = true;
             m_Pinned.Clear();
 
             Mod.Log.Info("Seen Better Days: on load, " + Census());
@@ -223,12 +239,26 @@ namespace SeenBetterDays.Systems
                     MeasureLandValueRange(buildings);
                 }
 
-                // The round-robin is right for keeping a settled city up to date and wrong for
-                // catching up with one we have just been pointed at.
-                int count = m_FullSweepPending
-                    ? buildings.Length
+                if (m_FullSweepPending)
+                {
+                    m_FullSweepPending = false;
+                    m_CatchUpRemaining = buildings.Length;
+                    m_CatchUpProcessed = 0;
+                    m_CatchUpBatches = 0;
+                    m_CatchUpWorkMilliseconds = 0d;
+                    m_CatchUpMaxBatchMilliseconds = 0d;
+
+                    Mod.Log.Info("Seen Better Days: starting bounded colour catch-up for "
+                               + buildings.Length + " growable building(s), "
+                               + CatchUpBuildingsPerUpdate + " per update.");
+                }
+
+                bool catchingUp = m_CatchUpRemaining > 0;
+                int count = catchingUp
+                    ? math.min(CatchUpBuildingsPerUpdate, math.min(m_CatchUpRemaining, buildings.Length))
                     : math.min(BuildingsPerUpdate, buildings.Length);
-                m_FullSweepPending = false;
+
+                long batchStarted = Stopwatch.GetTimestamp();
                 for (int i = 0; i < count; i++)
                 {
                     int previous = m_Cursor;
@@ -242,6 +272,29 @@ namespace SeenBetterDays.Systems
                     }
 
                     Process(buildings[m_Cursor]);
+                }
+
+                if (catchingUp)
+                {
+                    double elapsedMilliseconds =
+                        (Stopwatch.GetTimestamp() - batchStarted) * 1000d / Stopwatch.Frequency;
+
+                    m_CatchUpRemaining -= count;
+                    m_CatchUpProcessed += count;
+                    m_CatchUpBatches++;
+                    m_CatchUpWorkMilliseconds += elapsedMilliseconds;
+                    m_CatchUpMaxBatchMilliseconds =
+                        math.max(m_CatchUpMaxBatchMilliseconds, elapsedMilliseconds);
+
+                    if (m_CatchUpRemaining <= 0)
+                    {
+                        Mod.Log.Info("Seen Better Days: colour catch-up completed: "
+                                   + m_CatchUpProcessed + " building(s) in "
+                                   + m_CatchUpBatches + " batch(es), "
+                                   + m_CatchUpWorkMilliseconds.ToString("0.0")
+                                   + " ms total system work, slowest batch "
+                                   + m_CatchUpMaxBatchMilliseconds.ToString("0.0") + " ms.");
+                    }
                 }
             }
             finally

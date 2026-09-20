@@ -4,6 +4,7 @@ using Game.Common;
 using Game.Objects;
 using Game.Prefabs;
 using Game.Tools;
+using System.Diagnostics;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -82,6 +83,9 @@ namespace SeenBetterDays.Systems
         private int m_ApplyFailed;
         private string m_LastApplyFailure;
         private int m_Passes;
+        private int m_TimedPasses;
+        private double m_WorkMilliseconds;
+        private double m_MaxPassMilliseconds;
 
         public new bool Enabled { get; set; }
 
@@ -180,6 +184,7 @@ namespace SeenBetterDays.Systems
 
             float3 eye = m_CameraSystem.activeCameraController.pivot;
 
+            long passStarted = Stopwatch.GetTimestamp();
             NativeArray<Entity> buildings = m_GrowableQuery.ToEntityArray(Allocator.TempJob);
             try
             {
@@ -239,6 +244,12 @@ namespace SeenBetterDays.Systems
             finally
             {
                 buildings.Dispose();
+
+                double elapsedMilliseconds =
+                    (Stopwatch.GetTimestamp() - passStarted) * 1000d / Stopwatch.Frequency;
+                m_TimedPasses++;
+                m_WorkMilliseconds += elapsedMilliseconds;
+                m_MaxPassMilliseconds = math.max(m_MaxPassMilliseconds, elapsedMilliseconds);
             }
 
             if (++m_Passes >= StatusReportPasses)
@@ -255,7 +266,13 @@ namespace SeenBetterDays.Systems
                            + m_ApplyFailed + " placement failure(s)"
                            + (string.IsNullOrEmpty(m_LastApplyFailure)
                                ? "."
-                               : " (last: " + m_LastApplyFailure + ")."));
+                               : " (last: " + m_LastApplyFailure + ").")
+                           + " System work: "
+                           + (m_TimedPasses > 0
+                               ? (m_WorkMilliseconds / m_TimedPasses).ToString("0.000")
+                               : "0.000")
+                           + " ms average, " + m_MaxPassMilliseconds.ToString("0.000")
+                           + " ms slowest pass.");
 
                 m_Passes = 0;
                 m_Built = 0;
@@ -267,6 +284,9 @@ namespace SeenBetterDays.Systems
                 m_Ineligible = 0;
                 m_ApplyFailed = 0;
                 m_LastApplyFailure = null;
+                m_TimedPasses = 0;
+                m_WorkMilliseconds = 0d;
+                m_MaxPassMilliseconds = 0d;
             }
         }
 

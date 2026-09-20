@@ -76,10 +76,11 @@ namespace SeenBetterDays
             // tool finish its raycast, then redirect an overlay selection to its owning building.
             updateSystem.UpdateAfter<WeatheringOverlaySelectionSystem>(SystemUpdatePhase.ToolUpdate);
 
-            // Runs as the city is written to disk and takes the weathering off first, so nothing
-            // this mod wrote ends up in the save. See WeatheringSaveGuardSystem for why that is
-            // the right answer rather than merely the safe one.
-            updateSystem.UpdateAt<WeatheringSaveGuardSystem>(SystemUpdatePhase.Serialize);
+            // Use the serializer's preflight wrapper rather than mutating entities from an
+            // ordinary Serialize-phase update. The wrapper calls IPreSerialize before the engine
+            // builds its entity table, which is the last safe point to remove runtime visuals.
+            updateSystem.UpdateAt<Game.Serialization.PreSerialize<WeatheringSaveGuardSystem>>(
+                SystemUpdatePhase.Serialize);
 
             // Reports under the cursor what the simulation thinks of a building, so the colour on
             // the wall can be checked against the number it came from.

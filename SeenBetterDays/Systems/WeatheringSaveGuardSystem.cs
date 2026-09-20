@@ -1,4 +1,7 @@
 using Game;
+using Game.Serialization;
+using Colossal.Serialization.Entities;
+using System.Diagnostics;
 using UnityEngine.Scripting;
 
 namespace SeenBetterDays.Systems
@@ -27,7 +30,7 @@ namespace SeenBetterDays.Systems
     /// engine, and it is tested rather than assumed: weather a city, save, reload, and ask for a
     /// census. "0 already recoloured" means this works.
     /// </summary>
-    public partial class WeatheringSaveGuardSystem : GameSystemBase
+    public partial class WeatheringSaveGuardSystem : GameSystemBase, IPreSerialize
     {
         private BuildingWeatheringSystem m_Weathering;
         private BuildingOverlayTestSystem m_OverlayTest;
@@ -40,25 +43,41 @@ namespace SeenBetterDays.Systems
             m_OverlayTest = World.GetOrCreateSystemManaged<BuildingOverlayTestSystem>();
         }
 
-        [Preserve]
-        protected override void OnUpdate()
+        /// <summary>
+        /// Runs through the game's pre-serialization contract, before the serializer creates its
+        /// entity table. Performing these structural changes as an ordinary system inside the
+        /// Serialize phase corrupted that table on the 13,824-building test city and produced a
+        /// NullReferenceException in EntitySerializer.CreateEntityTable.
+        /// </summary>
+        public void PreSerialize(Context context)
         {
             // Serialize can continue after this system's own update returns. Do not let the next
             // ModificationEnd pass or a developer hotkey recreate structural changes underneath
             // the snapshot still being written.
             SaveMutationGate.BlockAfterSerializationStarts();
 
+            Stopwatch stopwatch = Stopwatch.StartNew();
             int stripped = m_Weathering.SuspendForSave();
             int strippedDecals = m_OverlayTest.SuspendDecalsForSave();
+            stopwatch.Stop();
 
             if (stripped > 0 || strippedDecals > 0)
             {
                 Mod.Log.Info("Seen Better Days: took the weathering off " + stripped
                            + " building(s) and removed " + strippedDecals
-                           + " temporary decal entit(ies) so the save contains none of it. "
+                           + " temporary decal entit(ies) in "
+                           + stopwatch.Elapsed.TotalMilliseconds.ToString("0.0")
+                           + " ms before the serializer created its entity table. "
                            + "Automatic colour weathering goes back on after serialization; "
                            + "developer decal samples stay cleared.");
             }
+        }
+
+        [Preserve]
+        protected override void OnUpdate()
+        {
+            // Work is invoked by PreSerialize<WeatheringSaveGuardSystem>, not by a regular phase
+            // update. Keeping this empty system alive gives the wrapper a stable target.
         }
 
         [Preserve]
