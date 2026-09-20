@@ -227,7 +227,12 @@ namespace SeenBetterDays.Rendering
             m_SurfaceMisses = 0;
             m_SurfaceSides = 0;
             m_PlannedFacadeMask = 0;
-            m_NextFacade = rng.NextInt(0, m_Facades.Count);
+
+            // The nominal Front is the side presented to the road. Starting at a random side
+            // sounded varied, but on long narrow growables it made the first (and often only)
+            // mark just as likely to land on a party wall as on the street facade. Begin at the
+            // front, then continue round-robin so additional marks still cover the whole shell.
+            m_NextFacade = FindFacade(FacadeSide.Front);
 
             PlanAllFamilies(building, profile, ref rng);
             PlanMinimumMark(building, profile, ref rng);
@@ -264,9 +269,6 @@ namespace SeenBetterDays.Rendering
         /// <summary>All four sides of the building that produced a usable rectangle.</summary>
         private readonly List<BuildingFacade> m_Facades = new List<BuildingFacade>(4);
 
-        private float m_MaxFacadeWidth;
-        private float m_MaxFacadeHeight;
-
         /// <summary>How much wall this building has, against <see cref="ReferenceWallArea"/>.
         /// Clamped because the point is proportion, not a tower buried in graffiti.</summary>
         private float m_WallScale = 1f;
@@ -290,8 +292,6 @@ namespace SeenBetterDays.Rendering
         private bool TryResolveAllFacades(Entity building, out string failureReason)
         {
             m_Facades.Clear();
-            m_MaxFacadeWidth = 0f;
-            m_MaxFacadeHeight = 0f;
             failureReason = null;
 
             if (!m_EntityManager.Exists(building)
@@ -318,8 +318,6 @@ namespace SeenBetterDays.Rendering
                 if (BuildingFacade.TryBuild(transform, geometry, (FacadeSide)side, out facade) && facade.IsValid)
                 {
                     m_Facades.Add(facade);
-                    m_MaxFacadeWidth = math.max(m_MaxFacadeWidth, facade.Width);
-                    m_MaxFacadeHeight = math.max(m_MaxFacadeHeight, facade.Height);
                 }
             }
 
@@ -648,6 +646,19 @@ namespace SeenBetterDays.Rendering
             }
 
             return count;
+        }
+
+        private int FindFacade(FacadeSide side)
+        {
+            for (int i = 0; i < m_Facades.Count; i++)
+            {
+                if (m_Facades[i].Side == side)
+                {
+                    return i;
+                }
+            }
+
+            return 0;
         }
 
         private string DescribeSurfaceSides()
@@ -1173,42 +1184,54 @@ namespace SeenBetterDays.Rendering
             int count,
             ref Unity.Mathematics.Random rng)
         {
-
             for (int i = 0; i < count && m_Pending.Count < MaxPerBuilding; i++)
             {
-                bool familyMatched;
-                DecalPrefabInfo decal = ForcedDecal;
-                if (decal == null)
-                {
-                    decal = m_Catalog.Pick(
-                        family,
-                        AllowNonBuildingDecals,
-                        m_MaxFacadeWidth,
-                        m_MaxFacadeHeight,
-                        ref rng,
-                        out familyMatched);
-                }
-
-                if (decal == null)
-                {
-                    return;
-                }
-
-                // Walk the sides instead of choosing each one independently. With four or five
-                // marks this normally covers the whole building rather than clustering by luck.
-                // A miss advances to another side; a second circuit supplies one more point per
-                // facade for windows, archways and articulated footprints.
+                // Choose the facade first and only then choose a projector that fits it. The old
+                // order picked against the building's largest wall, so a perfectly valid 8 m mark
+                // selected for a 30 m side was retried on a 5 m street facade, rejected, and then
+                // placed back on a long side. This made the round-robin look area-weighted even
+                // though it was not. Per-facade fitting gives short fronts the same opportunity as
+                // long flanks; real-mesh placement can still reject a doorway or party wall.
                 int startFacade = m_NextFacade;
-                int maxAttempts = m_Facades.Count * PlacementAttemptsPerFacade;
                 bool planned = false;
 
-                for (int attempt = 0; attempt < maxAttempts; attempt++)
+                for (int facadeOffset = 0; facadeOffset < m_Facades.Count; facadeOffset++)
                 {
-                    int facadeIndex = (startFacade + attempt) % m_Facades.Count;
-                    if (TryPlanMarkOnFacade(building, family, decal, facadeIndex, ref rng))
+                    int facadeIndex = (startFacade + facadeOffset) % m_Facades.Count;
+                    BuildingFacade facade = m_Facades[facadeIndex];
+
+                    bool familyMatched;
+                    DecalPrefabInfo decal = ForcedDecal;
+                    if (decal == null)
                     {
-                        m_NextFacade = (facadeIndex + 1) % m_Facades.Count;
-                        planned = true;
+                        decal = m_Catalog.Pick(
+                            family,
+                            AllowNonBuildingDecals,
+                            facade.Width,
+                            facade.Height,
+                            ref rng,
+                            out familyMatched);
+                    }
+
+                    if (decal == null)
+                    {
+                        continue;
+                    }
+
+                    for (int placementAttempt = 0;
+                         placementAttempt < PlacementAttemptsPerFacade;
+                         placementAttempt++)
+                    {
+                        if (TryPlanMarkOnFacade(building, family, decal, facadeIndex, ref rng))
+                        {
+                            m_NextFacade = (facadeIndex + 1) % m_Facades.Count;
+                            planned = true;
+                            break;
+                        }
+                    }
+
+                    if (planned)
+                    {
                         break;
                     }
                 }
