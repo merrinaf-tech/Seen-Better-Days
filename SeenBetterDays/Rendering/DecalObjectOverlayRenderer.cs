@@ -344,12 +344,12 @@ namespace SeenBetterDays.Rendering
         /// Clamped because the point is proportion, not a tower buried in graffiti.</summary>
         private float m_WallScale = 1f;
 
-        /// <summary>Every prefab-local wall sample for the building being planned. The list itself
-        /// is shared by all instances of that prefab; only sampled points are transformed.</summary>
-        private List<BuildingSurfaceProbe.SurfacePoint> m_Surface =
-            new List<BuildingSurfaceProbe.SurfacePoint>(0);
-        private readonly Dictionary<Entity, List<BuildingSurfaceProbe.SurfacePoint>> m_SurfaceTemplates =
-            new Dictionary<Entity, List<BuildingSurfaceProbe.SurfacePoint>>();
+        /// <summary>Prefab-local wall samples grouped by side. Grouping once when the template is
+        /// built guarantees that a short or low-triangle facade is sampled from its own geometry
+        /// instead of competing with thousands of triangles from the other three sides.</summary>
+        private List<BuildingSurfaceProbe.SurfacePoint>[] m_SurfaceBySide;
+        private readonly Dictionary<Entity, List<BuildingSurfaceProbe.SurfacePoint>[]> m_SurfaceTemplates =
+            new Dictionary<Entity, List<BuildingSurfaceProbe.SurfacePoint>[]>();
         private Transform m_SurfaceTransform;
         private int m_CachedSurfacePointCount;
         private bool m_SurfaceTemplateCacheHit;
@@ -359,10 +359,10 @@ namespace SeenBetterDays.Rendering
             m_SurfaceTransform = m_EntityManager.GetComponentData<Transform>(building);
             Entity prefab = m_EntityManager.GetComponentData<PrefabRef>(building).m_Prefab;
 
-            List<BuildingSurfaceProbe.SurfacePoint> cached;
+            List<BuildingSurfaceProbe.SurfacePoint>[] cached;
             if (m_SurfaceTemplates.TryGetValue(prefab, out cached))
             {
-                m_Surface = cached;
+                m_SurfaceBySide = cached;
                 m_SurfaceTemplateCacheHit = true;
                 return;
             }
@@ -373,7 +373,20 @@ namespace SeenBetterDays.Rendering
                 building,
                 collected);
 
-            m_Surface = collected;
+            var partitioned = new List<BuildingSurfaceProbe.SurfacePoint>[4];
+            for (int side = 0; side < partitioned.Length; side++)
+            {
+                partitioned[side] = new List<BuildingSurfaceProbe.SurfacePoint>(
+                    math.max(4, collected.Count / 4));
+            }
+
+            for (int i = 0; i < collected.Count; i++)
+            {
+                BuildingSurfaceProbe.SurfacePoint point = collected[i];
+                partitioned[(int)point.m_Side].Add(point);
+            }
+
+            m_SurfaceBySide = partitioned;
             m_SurfaceTemplateCacheHit = false;
 
             // An empty result often means the game's mesh buffers have not become resident yet.
@@ -389,7 +402,7 @@ namespace SeenBetterDays.Rendering
                 m_CachedSurfacePointCount = 0;
             }
 
-            m_SurfaceTemplates[prefab] = collected;
+            m_SurfaceTemplates[prefab] = partitioned;
             m_CachedSurfacePointCount += collected.Count;
         }
 
@@ -948,7 +961,14 @@ namespace SeenBetterDays.Rendering
             position = default;
             rotation = default;
 
-            if (m_Surface.Count == 0)
+            if (m_SurfaceBySide == null)
+            {
+                return false;
+            }
+
+            List<BuildingSurfaceProbe.SurfacePoint> surface =
+                m_SurfaceBySide[(int)facade.Side];
+            if (surface.Count == 0)
             {
                 return false;
             }
@@ -960,8 +980,8 @@ namespace SeenBetterDays.Rendering
 
             for (int i = 0; i < samples; i++)
             {
-                int candidate = rng.NextInt(0, m_Surface.Count);
-                BuildingSurfaceProbe.SurfacePoint point = m_Surface[candidate];
+                int candidate = rng.NextInt(0, surface.Count);
+                BuildingSurfaceProbe.SurfacePoint point = surface[candidate];
                 float3 worldNormal = math.mul(m_SurfaceTransform.m_Rotation, point.m_Normal);
 
                 // Facing roughly the same way as this side of the building. Loose, so that
@@ -986,7 +1006,7 @@ namespace SeenBetterDays.Rendering
                 return false;
             }
 
-            BuildingSurfaceProbe.SurfacePoint chosen = m_Surface[best];
+            BuildingSurfaceProbe.SurfacePoint chosen = surface[best];
             float3 chosenPosition = m_SurfaceTransform.m_Position
                                   + math.mul(m_SurfaceTransform.m_Rotation, chosen.m_Position);
             float3 chosenNormal = math.mul(m_SurfaceTransform.m_Rotation, chosen.m_Normal);

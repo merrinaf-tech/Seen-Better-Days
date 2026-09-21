@@ -166,6 +166,7 @@ namespace SeenBetterDays.Geometry
             public float3 m_Position;
             public float3 m_Normal;
             public float m_Area;
+            public FacadeSide m_Side;
         }
 
         /// <summary>
@@ -205,9 +206,23 @@ namespace SeenBetterDays.Geometry
                 return 0;
             }
 
+            float3 geometryCenter = default;
+            if (entityManager.HasComponent<ObjectGeometryData>(prefab))
+            {
+                ObjectGeometryData geometry = entityManager.GetComponentData<ObjectGeometryData>(prefab);
+                geometryCenter = (geometry.m_Bounds.min + geometry.m_Bounds.max) * 0.5f;
+            }
+
+            // Do not let submesh order spend the whole sample budget on the first wall it happens
+            // to contain. Detailed row houses can exceed the cap before their street facade is
+            // reached, which left only the two gable ends in the cache. Reserve an equal share for
+            // every local side and keep walking the mesh after one side is full.
+            int pointsPerSide = math.max(1, limit / 4);
+            int acceptedLimit = pointsPerSide * 4;
+            int[] sideCounts = new int[4];
             DynamicBuffer<SubMesh> subMeshes = entityManager.GetBuffer<SubMesh>(prefab, true);
 
-            for (int i = 0; i < subMeshes.Length && into.Count < limit; i++)
+            for (int i = 0; i < subMeshes.Length && into.Count < acceptedLimit; i++)
             {
                 SubMesh subMesh = subMeshes[i];
                 Entity mesh = subMesh.m_SubMesh;
@@ -226,7 +241,7 @@ namespace SeenBetterDays.Geometry
                                                          | SubMeshFlags.IsStackEnd)) != 0;
 
                 int triangles = indices.Length / 3;
-                for (int t = 0; t < triangles && into.Count < limit; t++)
+                for (int t = 0; t < triangles && into.Count < acceptedLimit; t++)
                 {
                     int i0 = indices[t * 3].m_Index;
                     int i1 = indices[t * 3 + 1].m_Index;
@@ -265,11 +280,46 @@ namespace SeenBetterDays.Geometry
                         continue;
                     }
 
+                    float3 position = (a + b + c) / 3f;
+
+                    // Mesh winding is not consistent across custom assets. Orient the cached
+                    // normal away from the prefab centre so both sides can pass the renderer's
+                    // facing test instead of one direction disappearing solely because its
+                    // triangles were wound the other way round.
+                    float3 fromCenter = position - geometryCenter;
+                    fromCenter.y = 0f;
+                    if (math.dot(normal, fromCenter) < 0f)
+                    {
+                        normal = -normal;
+                    }
+
+                    int side;
+                    if (math.abs(normal.z) >= math.abs(normal.x))
+                    {
+                        side = normal.z >= 0f
+                            ? (int)FacadeSide.Front
+                            : (int)FacadeSide.Back;
+                    }
+                    else
+                    {
+                        side = normal.x >= 0f
+                            ? (int)FacadeSide.Right
+                            : (int)FacadeSide.Left;
+                    }
+
+                    if (sideCounts[side] >= pointsPerSide)
+                    {
+                        continue;
+                    }
+
+                    sideCounts[side]++;
+
                     into.Add(new SurfacePoint
                     {
-                        m_Position = (a + b + c) / 3f,
+                        m_Position = position,
                         m_Normal = normal,
                         m_Area = twiceArea * 0.5f,
+                        m_Side = (FacadeSide)side,
                     });
                 }
             }
