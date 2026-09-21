@@ -257,6 +257,9 @@ namespace SeenBetterDays.Rendering
             m_SurfaceMisses = 0;
             m_SurfaceSides = 0;
             m_PlannedFacadeMask = 0;
+            m_FacadeSequenceStep = 0;
+            m_FrontMarkCount = 0;
+            m_FrontGraffitiCount = 0;
 
             // The nominal Front is the side presented to the road. Starting at a random side
             // sounded varied, but on long narrow growables it made the first (and often only)
@@ -264,6 +267,12 @@ namespace SeenBetterDays.Rendering
             // front, then continue round-robin so additional marks still cover the whole shell.
             m_NextFacade = FindFacade(FacadeSide.Front);
 
+            // At Neglected and Decayed, a player looking from the road must actually be able to
+            // read the newly introduced graffiti family. A purely round-robin plan can truthfully
+            // contain four graffiti while putting every recognisable one on a flank or the rear.
+            // Reserve one low, street-facing example first; PlanAllFamilies accounts for it when
+            // sharing out the fixed entity budget.
+            PlanRequiredFrontGraffiti(building, profile, ref rng);
             PlanAllFamilies(building, profile, ref rng);
             PlanMinimumMark(building, profile, ref rng);
             PlanMinimumMarkPerFacade(building, profile, ref rng);
@@ -657,7 +666,10 @@ namespace SeenBetterDays.Rendering
         private int m_SurfaceMisses;
         private int m_SurfaceSides;
         private int m_NextFacade;
+        private int m_FacadeSequenceStep;
         private int m_PlannedFacadeMask;
+        private int m_FrontMarkCount;
+        private int m_FrontGraffitiCount;
 
         public string LastPlacementReport
         {
@@ -683,7 +695,9 @@ namespace SeenBetterDays.Rendering
                      + m_SurfaceHits + " raycast hit(s), " + m_SurfaceRecoveries
                      + " nearest-mesh recovery hit(s), " + m_SurfaceMisses
                      + " skipped (no mesh surface), facades=" + DescribeSurfaceSides()
-                     + ", covered=" + CountPlannedFacades() + "/" + m_Facades.Count;
+                     + ", covered=" + CountPlannedFacades() + "/" + m_Facades.Count
+                     + ", front=" + m_FrontMarkCount + " mark(s) including "
+                     + m_FrontGraffitiCount + " graffiti";
             }
         }
 
@@ -712,6 +726,28 @@ namespace SeenBetterDays.Rendering
             }
 
             return 0;
+        }
+
+        /// <summary>
+        /// Gives the road-facing wall a little more visual weight without abandoning the other
+        /// sides. Five successful placements follow Front, Right, Front, Back, Left: 40% on the
+        /// facade a player normally sees and 20% on each remaining side. The minimum-facade pass
+        /// still repairs any side whose real mesh could not accept its scheduled mark.
+        /// </summary>
+        private int PreferredFacadeForStep(int step)
+        {
+            switch (step % 5)
+            {
+                case 0:
+                case 2:
+                    return FindFacade(FacadeSide.Front);
+                case 1:
+                    return FindFacade(FacadeSide.Right);
+                case 3:
+                    return FindFacade(FacadeSide.Back);
+                default:
+                    return FindFacade(FacadeSide.Left);
+            }
         }
 
         private string DescribeSurfaceSides()
@@ -931,6 +967,67 @@ namespace SeenBetterDays.Rendering
         /// graffiti on the commercial ones visible at the top of the scale rather than crowded out
         /// by dirt.
         /// </summary>
+        private void PlanRequiredFrontGraffiti(
+            Entity building,
+            in BuildingVisualProfile profile,
+            ref Unity.Mathematics.Random rng)
+        {
+            if (math.saturate(profile.Graffiti) <= 0.01f
+                || ForcedDecal != null
+                || AllowNonBuildingDecals
+                || !m_Catalog.HasAutomaticFamily(OverlayFamily.Graffiti))
+            {
+                return;
+            }
+
+            int frontIndex = FindFacade(FacadeSide.Front);
+            BuildingFacade front = m_Facades[frontIndex];
+            if (!m_Catalog.HasAutomaticFamilyThatFits(
+                OverlayFamily.Graffiti,
+                front.Width,
+                front.Height))
+            {
+                return;
+            }
+
+            // A different catalogue pick can have a different footprint. Give the whitelist a few
+            // chances to supply something that both fits the facade and finds solid wall between
+            // windows, while keeping this one-off visibility guarantee tightly bounded.
+            for (int decalAttempt = 0; decalAttempt < 4; decalAttempt++)
+            {
+                bool familyMatched;
+                DecalPrefabInfo decal = m_Catalog.Pick(
+                    OverlayFamily.Graffiti,
+                    false,
+                    front.Width,
+                    front.Height,
+                    ref rng,
+                    out familyMatched);
+
+                if (decal == null)
+                {
+                    return;
+                }
+
+                for (int placementAttempt = 0;
+                     placementAttempt < PlacementAttemptsPerFacade;
+                     placementAttempt++)
+                {
+                    if (TryPlanMarkOnFacade(
+                        building,
+                        OverlayFamily.Graffiti,
+                        decal,
+                        frontIndex,
+                        true,
+                        ref rng))
+                    {
+                        m_NextFacade = (frontIndex + 1) % m_Facades.Count;
+                        return;
+                    }
+                }
+            }
+        }
+
         private void PlanAllFamilies(Entity building, in BuildingVisualProfile profile, ref Unity.Mathematics.Random rng)
         {
             float scale = Mod.Settings != null ? Mod.Settings.IntensityScale : 1f;
@@ -1009,9 +1106,12 @@ namespace SeenBetterDays.Rendering
 
             for (int i = 0; i < s_Families.Length; i++)
             {
-                if (counts[i] > 0)
+                int alreadyPlanned;
+                m_LastFamilies.TryGetValue(s_Families[i], out alreadyPlanned);
+                int remaining = math.max(0, counts[i] - alreadyPlanned);
+                if (remaining > 0)
                 {
-                    PlanMarks(building, s_Families[i], counts[i], ref rng);
+                    PlanMarks(building, s_Families[i], remaining, ref rng);
                 }
             }
         }
@@ -1245,7 +1345,7 @@ namespace SeenBetterDays.Rendering
                 // placed back on a long side. This made the round-robin look area-weighted even
                 // though it was not. Per-facade fitting gives short fronts the same opportunity as
                 // long flanks; real-mesh placement can still reject a doorway or party wall.
-                int startFacade = m_NextFacade;
+                int startFacade = PreferredFacadeForStep(m_FacadeSequenceStep);
                 bool planned = false;
 
                 for (int facadeOffset = 0; facadeOffset < m_Facades.Count; facadeOffset++)
@@ -1278,6 +1378,7 @@ namespace SeenBetterDays.Rendering
                         if (TryPlanMarkOnFacade(building, family, decal, facadeIndex, ref rng))
                         {
                             m_NextFacade = (facadeIndex + 1) % m_Facades.Count;
+                            m_FacadeSequenceStep++;
                             planned = true;
                             break;
                         }
@@ -1305,6 +1406,23 @@ namespace SeenBetterDays.Rendering
             int facadeIndex,
             ref Unity.Mathematics.Random rng)
         {
+            return TryPlanMarkOnFacade(
+                building,
+                family,
+                decal,
+                facadeIndex,
+                false,
+                ref rng);
+        }
+
+        private bool TryPlanMarkOnFacade(
+            Entity building,
+            OverlayFamily family,
+            DecalPrefabInfo decal,
+            int facadeIndex,
+            bool preferLowerGraffiti,
+            ref Unity.Mathematics.Random rng)
+        {
             BuildingFacade facade = m_Facades[facadeIndex];
 
             // A projector cannot be clipped to its owning building. If it overhangs this
@@ -1322,10 +1440,13 @@ namespace SeenBetterDays.Rendering
             float marginV = math.min(0.5f, decal.Size.z * 0.5f / math.max(facade.Height, 0.01f));
             float u = math.lerp(marginU, 1f - marginU, rng.NextFloat());
 
+            float verticalPosition = preferLowerGraffiti && family == OverlayFamily.Graffiti
+                ? math.square(rng.NextFloat()) * 0.32f
+                : SampleVerticalPosition(family, ref rng);
             float v = math.lerp(
                 marginV,
                 1f - marginV,
-                SampleVerticalPosition(family, ref rng));
+                verticalPosition);
 
             float3 position;
             quaternion rotation;
@@ -1359,6 +1480,14 @@ namespace SeenBetterDays.Rendering
             m_LastFamilies.TryGetValue(family, out already);
             m_LastFamilies[family] = already + 1;
             m_PlannedFacadeMask |= 1 << facadeIndex;
+            if (facade.Side == FacadeSide.Front)
+            {
+                m_FrontMarkCount++;
+                if (family == OverlayFamily.Graffiti)
+                {
+                    m_FrontGraffitiCount++;
+                }
+            }
             return true;
         }
 
@@ -1386,12 +1515,24 @@ namespace SeenBetterDays.Rendering
                 PendingElement candidate = m_Pending[i];
                 if (candidate.FacadeIndex < 0
                     || candidate.FacadeIndex >= perFacade.Length
-                    || perFacade[candidate.FacadeIndex] <= 1)
+                    || perFacade[candidate.FacadeIndex] <= 1
+                    || (candidate.Family == OverlayFamily.Graffiti
+                        && m_Facades[candidate.FacadeIndex].Side == FacadeSide.Front
+                        && m_FrontGraffitiCount <= 1))
                 {
                     continue;
                 }
 
                 m_Pending.RemoveAt(i);
+
+                if (m_Facades[candidate.FacadeIndex].Side == FacadeSide.Front)
+                {
+                    m_FrontMarkCount--;
+                    if (candidate.Family == OverlayFamily.Graffiti)
+                    {
+                        m_FrontGraffitiCount--;
+                    }
+                }
 
                 int familyCount;
                 if (m_LastFamilies.TryGetValue(candidate.Family, out familyCount))
