@@ -4,6 +4,7 @@ using Game.Common;
 using Game.Objects;
 using Game.Prefabs;
 using Game.Tools;
+using System.Collections.Generic;
 using System.Diagnostics;
 using Unity.Collections;
 using Unity.Entities;
@@ -58,6 +59,15 @@ namespace SeenBetterDays.Systems
         private const int PlacementAttemptsPerUpdate = 1;
 
         /// <summary>
+        /// Failed plans are deterministic for a building's weathering value and seed. Remember
+        /// the ones for which the renderer found no valid automatic placement, otherwise the
+        /// proximity scan retries the exact same work every time its cursor comes round. Keep the
+        /// cache bounded so long-running cities that replace many buildings cannot grow it
+        /// forever; clearing it is safe because it merely permits another attempt.
+        /// </summary>
+        private const int MaxRejectedPlacements = 4096;
+
+        /// <summary>
         /// The status line is useful while tuning, but reporting it every 32 passes produced
         /// roughly one line every 1.6 seconds and buried the events that mattered. Keep the same
         /// counters and publish a sample about every thirteen seconds instead; a successful build
@@ -87,11 +97,22 @@ namespace SeenBetterDays.Systems
         private int m_NoWeatheringState;
         private int m_Ineligible;
         private int m_ApplyFailed;
+        private int m_SuppressedRetries;
         private string m_LastApplyFailure;
         private int m_Passes;
         private int m_TimedPasses;
         private double m_WorkMilliseconds;
         private double m_MaxPassMilliseconds;
+
+        private struct RejectedPlacement
+        {
+            public uint WeatheringBits;
+            public uint Seed;
+            public uint IntensityBits;
+        }
+
+        private readonly Dictionary<Entity, RejectedPlacement> m_RejectedPlacements =
+            new Dictionary<Entity, RejectedPlacement>();
 
         public new bool Enabled { get; set; }
 
@@ -146,6 +167,7 @@ namespace SeenBetterDays.Systems
             base.OnGameLoadingComplete(purpose, mode);
             Enabled = mode.IsGame();
             m_Passes = 0;
+            m_RejectedPlacements.Clear();
         }
 
         public override int GetUpdateInterval(SystemUpdatePhase phase)
@@ -278,6 +300,8 @@ namespace SeenBetterDays.Systems
                            + m_NoWeatheringState + " awaiting a weathering state, "
                            + m_Ineligible + " ineligible, "
                            + m_ApplyFailed + " placement failure(s)"
+                           + ", " + m_SuppressedRetries
+                           + " unchanged failed plan(s) skipped"
                            + (string.IsNullOrEmpty(m_LastApplyFailure)
                                ? "."
                                : " (last: " + m_LastApplyFailure + ").")
@@ -298,6 +322,7 @@ namespace SeenBetterDays.Systems
                 m_NoWeatheringState = 0;
                 m_Ineligible = 0;
                 m_ApplyFailed = 0;
+                m_SuppressedRetries = 0;
                 m_LastApplyFailure = null;
                 m_TimedPasses = 0;
                 m_WorkMilliseconds = 0d;
@@ -433,6 +458,30 @@ namespace SeenBetterDays.Systems
             BuildingVisualProfile profile =
                 BuildingVisualProfile.FromWeathering(category, state.m_Weathering, state.m_Seed);
 
+            // The renderer and its random sequence are deterministic for this input. If an
+            // unchanged profile already proved that it cannot produce a valid automatic mark,
+            // rerunning facade and mesh placement can only produce the same result. A changed
+            // weathering value invalidates the entry immediately and gets a fresh attempt.
+            RejectedPlacement rejected;
+            uint weatheringBits = math.asuint(profile.Weathering);
+            uint intensityBits = math.asuint(
+                Mod.Settings != null ? Mod.Settings.IntensityScale : 1f);
+            bool automaticPlacement = renderer.ForcedDecal == null
+                                   && !renderer.AllowNonBuildingDecals;
+            if (automaticPlacement
+                && m_RejectedPlacements.TryGetValue(building, out rejected))
+            {
+                if (rejected.WeatheringBits == weatheringBits
+                    && rejected.Seed == profile.Seed
+                    && rejected.IntensityBits == intensityBits)
+                {
+                    m_SuppressedRetries++;
+                    return false;
+                }
+
+                m_RejectedPlacements.Remove(building);
+            }
+
             int placed;
             string failure;
             attemptedPlacement = true;
@@ -440,8 +489,31 @@ namespace SeenBetterDays.Systems
             {
                 m_ApplyFailed++;
                 m_LastApplyFailure = failure;
+
+                // This result means mesh data was available but the deterministic plan could not
+                // fit a usable mark on the sampled wall. Residency-related failures are allowed
+                // to retry because a later LOD can expose different mesh buffers.
+                if (automaticPlacement
+                    && (failure == "profile asked for nothing: every family is at zero intensity"
+                        || failure == "no automatic mark fit a sampled facade"))
+                {
+                    if (m_RejectedPlacements.Count >= MaxRejectedPlacements)
+                    {
+                        m_RejectedPlacements.Clear();
+                    }
+
+                    m_RejectedPlacements[building] = new RejectedPlacement
+                    {
+                        WeatheringBits = weatheringBits,
+                        Seed = profile.Seed,
+                        IntensityBits = intensityBits,
+                    };
+                }
+
                 return false;
             }
+
+            m_RejectedPlacements.Remove(building);
 
             Mod.Log.Info("Seen Better Days: detailed entity " + building.Index + " with " + placed
                        + " mark(s) - " + renderer.LastPlacementReport

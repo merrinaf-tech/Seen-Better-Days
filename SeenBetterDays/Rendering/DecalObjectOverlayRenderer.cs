@@ -289,7 +289,9 @@ namespace SeenBetterDays.Rendering
                 failureReason = m_SurfaceMisses > 0
                     ? "no sampled position hit the building mesh (" + m_SurfaceMisses + " raycast miss(es)) | "
                       + BuildingSurfaceProbe.DescribeMeshResidency(m_EntityManager, building)
-                    : "profile asked for nothing: every family is at zero intensity";
+                    : profile.MaxIntensity <= 0.01f
+                        ? "profile asked for nothing: every family is at zero intensity"
+                        : "no automatic mark fit a sampled facade";
                 return false;
             }
 
