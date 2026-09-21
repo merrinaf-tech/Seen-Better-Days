@@ -3,6 +3,7 @@ using Colossal.Logging;
 using Game.Common;
 using Game.Objects;
 using Game.Prefabs;
+using Game.Rendering;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -88,6 +89,22 @@ namespace SeenBetterDays.Rendering
 
         private readonly Dictionary<Entity, OverlayRecord> m_Records = new Dictionary<Entity, OverlayRecord>();
         private readonly List<PendingElement> m_Pending = new List<PendingElement>(MaxPerBuilding);
+
+        [System.Flags]
+        private enum RuntimeInitialization : byte
+        {
+            None = 0,
+            DisableCustomMeshColor = 1,
+            SetPseudoRandomSeed = 2,
+        }
+
+        /// <summary>
+        /// Runtime object archetypes are stable for a prefab. Cache the two pieces of initialisation
+        /// that the game's GenerateObjectsSystem performs after creating an object from that
+        /// archetype, instead of walking the archetype once for every mark.
+        /// </summary>
+        private readonly Dictionary<Entity, RuntimeInitialization> m_RuntimeInitialization =
+            new Dictionary<Entity, RuntimeInitialization>();
 
         /// <summary>Which facade new overlays go on. Cyclable at runtime so the tester can see
         /// that the placement really is following the building's rotation.</summary>
@@ -1438,6 +1455,7 @@ namespace SeenBetterDays.Rendering
                 {
                     PendingElement pending = m_Pending[i];
                     ObjectData objectData = m_EntityManager.GetComponentData<ObjectData>(pending.Prefab);
+                    RuntimeInitialization initialization = GetRuntimeInitialization(pending.Prefab, objectData);
 
                     // The archetype the prefab system built for this prefab already carries
                     // Created and Updated, so the object, culling and batching systems pick the
@@ -1445,6 +1463,28 @@ namespace SeenBetterDays.Rendering
                     Entity element = commandBuffer.CreateEntity(objectData.m_Archetype);
                     commandBuffer.SetComponent(element, new PrefabRef(pending.Prefab));
                     commandBuffer.SetComponent(element, new Transform(pending.Position, pending.Rotation));
+
+                    // Creating the archetype is only the first half of the game's normal object
+                    // creation path. GenerateObjectsSystem also disables the empty, enableable
+                    // CustomMeshColor buffer and fills PseudoRandomSeed. Leaving the colour buffer
+                    // enabled with length zero can send the Burst rendering jobs down a path that
+                    // assumes it has been populated. A captured crash ended in lib_burst_generated
+                    // while dereferencing a garbage Entity index immediately after decal churn;
+                    // mirror the vanilla initialisation here rather than feeding that invalid
+                    // state to the renderer.
+                    if ((initialization & RuntimeInitialization.DisableCustomMeshColor) != 0)
+                    {
+                        commandBuffer.SetComponentEnabled<CustomMeshColor>(element, false);
+                    }
+
+                    if ((initialization & RuntimeInitialization.SetPseudoRandomSeed) != 0)
+                    {
+                        uint mixed = (uint)building.Index * 0x9E3779B9u
+                                   ^ (uint)pending.Prefab.Index * 0x85EBCA6Bu
+                                   ^ (uint)(i + 1);
+                        commandBuffer.SetComponent(element, new PseudoRandomSeed((ushort)(mixed ^ (mixed >> 16))));
+                    }
+
                     commandBuffer.AddComponent(element, new WeatheringOverlay(building, pending.Family));
                 }
 
@@ -1456,6 +1496,42 @@ namespace SeenBetterDays.Rendering
             }
 
             CollectElementsFor(building, record);
+        }
+
+        private RuntimeInitialization GetRuntimeInitialization(Entity prefab, in ObjectData objectData)
+        {
+            RuntimeInitialization result;
+            if (m_RuntimeInitialization.TryGetValue(prefab, out result))
+            {
+                return result;
+            }
+
+            result = RuntimeInitialization.None;
+            TypeIndex customMeshColor = TypeManager.GetTypeIndex<CustomMeshColor>();
+            TypeIndex pseudoRandomSeed = TypeManager.GetTypeIndex<PseudoRandomSeed>();
+            NativeArray<ComponentType> types = objectData.m_Archetype.GetComponentTypes(Allocator.Temp);
+            try
+            {
+                for (int i = 0; i < types.Length; i++)
+                {
+                    TypeIndex type = types[i].TypeIndex;
+                    if (type == customMeshColor)
+                    {
+                        result |= RuntimeInitialization.DisableCustomMeshColor;
+                    }
+                    else if (type == pseudoRandomSeed)
+                    {
+                        result |= RuntimeInitialization.SetPseudoRandomSeed;
+                    }
+                }
+            }
+            finally
+            {
+                types.Dispose();
+            }
+
+            m_RuntimeInitialization[prefab] = result;
+            return result;
         }
 
         /// <summary>
