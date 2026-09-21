@@ -217,6 +217,19 @@ namespace SeenBetterDays.Rendering
                 return false;
             }
 
+            // Some small growables cannot fit even the smallest approved projector for their
+            // active family. Discover that from catalogue metadata before CollectFacadePoints
+            // walks the rendered mesh. The proximity system may revisit such a building often;
+            // the old order paid for the full mesh scan every time even though placement was
+            // geometrically impossible.
+            if (ForcedDecal == null
+                && !AllowNonBuildingDecals
+                && !HasFittingAutomaticDecal(profile))
+            {
+                failureReason = "no approved active decal fits any facade";
+                return false;
+            }
+
             m_Pending.Clear();
             Unity.Mathematics.Random rng = new Unity.Mathematics.Random(profile.Seed == 0u ? 1u : profile.Seed);
 
@@ -264,6 +277,29 @@ namespace SeenBetterDays.Rendering
             m_Records[building] = record;
             placed = record.Elements.Count;
             return true;
+        }
+
+        private bool HasFittingAutomaticDecal(in BuildingVisualProfile profile)
+        {
+            for (int familyIndex = 0; familyIndex < s_Families.Length; familyIndex++)
+            {
+                OverlayFamily family = s_Families[familyIndex];
+                if (math.saturate(profile.GetIntensity(family)) <= 0.01f)
+                {
+                    continue;
+                }
+
+                for (int facadeIndex = 0; facadeIndex < m_Facades.Count; facadeIndex++)
+                {
+                    BuildingFacade facade = m_Facades[facadeIndex];
+                    if (m_Catalog.HasAutomaticFamilyThatFits(family, facade.Width, facade.Height))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         /// <summary>All four sides of the building that produced a usable rectangle.</summary>

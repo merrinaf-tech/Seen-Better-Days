@@ -684,6 +684,27 @@ namespace SeenBetterDays.Rendering
         }
 
         /// <summary>
+        /// Reports whether the approved automatic pool contains a projector from this family that
+        /// can fit inside the supplied facade. This is deliberately non-random: callers use it as
+        /// a cheap feasibility check before gathering and raycasting the building's mesh.
+        /// </summary>
+        public bool HasAutomaticFamilyThatFits(OverlayFamily family, float maxWidth, float maxHeight)
+        {
+            for (int i = 0; i < m_AutoPool.Count; i++)
+            {
+                DecalPrefabInfo candidate = m_AutoPool[i];
+                if ((candidate.AutomaticFamilies & family) != 0
+                    && candidate.Size.x <= maxWidth
+                    && candidate.Size.z <= maxHeight)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Picks a decal for a family, deterministically in the seed. The live path is strict: if
         /// the whitelist has no matching prefab it returns null instead of substituting unrelated
         /// artwork. The broad fallback survives only behind the explicit non-building diagnostic.
