@@ -48,9 +48,14 @@ namespace SeenBetterDays.Systems
         /// <summary>Buildings looked at per update.</summary>
         private const int ScanPerUpdate = 128;
 
-        /// <summary>How many may actually be built per update. Placement raycasts every triangle
-        /// of a building, so this is the one number that decides what this system costs.</summary>
-        private const int BuildPerUpdate = 2;
+        /// <summary>
+        /// How many expensive placement attempts may run per update. Count attempts rather than
+        /// successes: the previous limit allowed an arbitrary number of mesh walks when several
+        /// buildings could not accept a decal, which is how a normally cheap pass reached 67 ms.
+        /// One attempt every sixteen frames still fills the camera radius quickly without stacking
+        /// two complex prefabs into one frame.
+        /// </summary>
+        private const int PlacementAttemptsPerUpdate = 1;
 
         /// <summary>
         /// The status line is useful while tuning, but reporting it every 32 passes produced
@@ -74,6 +79,7 @@ namespace SeenBetterDays.Systems
         /// look identical from the outside; the difference has to be something it says.
         /// </summary>
         private int m_Built;
+        private int m_PlacementAttempts;
         private int m_Removed;
         private int m_InRange;
         private int m_BelowThreshold;
@@ -193,7 +199,7 @@ namespace SeenBetterDays.Systems
                     return;
                 }
 
-                int built = 0;
+                int placementAttempts = 0;
                 int scanned = math.min(ScanPerUpdate, buildings.Length);
 
                 for (int i = 0; i < scanned; i++)
@@ -229,15 +235,22 @@ namespace SeenBetterDays.Systems
                         m_InRange++;
                     }
 
-                    if (has || distance > NearRadius || built >= BuildPerUpdate)
+                    if (has || distance > NearRadius
+                        || placementAttempts >= PlacementAttemptsPerUpdate)
                     {
                         continue;
                     }
 
-                    if (TryBuild(renderer, building))
+                    bool attemptedPlacement;
+                    if (TryBuild(renderer, building, out attemptedPlacement))
                     {
-                        built++;
                         m_Built++;
+                    }
+
+                    if (attemptedPlacement)
+                    {
+                        placementAttempts++;
+                        m_PlacementAttempts++;
                     }
                 }
             }
@@ -255,7 +268,8 @@ namespace SeenBetterDays.Systems
             if (++m_Passes >= StatusReportPasses)
             {
                 Mod.Log.Info("Seen Better Days: decal detail layer - " + m_Built
-                           + " building(s) detailed, " + m_Removed
+                           + " building(s) detailed from " + m_PlacementAttempts
+                           + " placement attempt(s), " + m_Removed
                            + " removed after leaving the radius, "
                            + renderer.TrackedBuildingCount + " currently detailed, "
                            + m_InRange + " seen in range, "
@@ -276,6 +290,7 @@ namespace SeenBetterDays.Systems
 
                 m_Passes = 0;
                 m_Built = 0;
+                m_PlacementAttempts = 0;
                 m_Removed = 0;
                 m_InRange = 0;
                 m_BelowThreshold = 0;
@@ -367,6 +382,17 @@ namespace SeenBetterDays.Systems
 
         private bool TryBuild(DecalObjectOverlayRenderer renderer, Entity building)
         {
+            bool ignored;
+            return TryBuild(renderer, building, out ignored);
+        }
+
+        private bool TryBuild(
+            DecalObjectOverlayRenderer renderer,
+            Entity building,
+            out bool attemptedPlacement)
+        {
+            attemptedPlacement = false;
+
             if (!EntityManager.HasComponent<WeatheringState>(building))
             {
                 m_NoWeatheringState++;
@@ -409,6 +435,7 @@ namespace SeenBetterDays.Systems
 
             int placed;
             string failure;
+            attemptedPlacement = true;
             if (!renderer.Apply(building, profile, out placed, out failure))
             {
                 m_ApplyFailed++;

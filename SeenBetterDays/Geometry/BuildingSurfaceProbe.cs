@@ -160,7 +160,7 @@ namespace SeenBetterDays.Geometry
             return found;
         }
 
-        /// <summary>One piece of real wall: where it is, which way it faces, and how big it is.</summary>
+        /// <summary>One piece of real wall in prefab-local space: position, normal and area.</summary>
         public struct SurfacePoint
         {
             public float3 m_Position;
@@ -169,14 +169,15 @@ namespace SeenBetterDays.Geometry
         }
 
         /// <summary>
-        /// Walks a building's geometry once and collects every piece of wall worth marking.
+        /// Walks a building prefab's geometry once and collects every piece of wall worth marking.
         ///
         /// This replaces casting a separate ray for every mark. Both answer the same question -
         /// where is there real surface here - but one asks it once per building and the other asks
         /// it once per mark, and the difference is the whole cost of the detail layer: a tower of
         /// two thousand triangles with ten marks was twenty thousand triangle tests, and is now
-        /// two thousand plus ten. That is what makes it affordable to put more marks on a building
-        /// rather than fewer.
+        /// two thousand plus ten. Positions and normals remain in the building's local space, so
+        /// this result can be cached and shared by every instance of the same prefab. The renderer
+        /// transforms only the handful of candidates it samples for an individual building.
         ///
         /// Only near-vertical faces are kept. A decal projector on a roof or a soffit is either
         /// invisible or wrong, and filtering here means nothing downstream has to think about it.
@@ -184,7 +185,7 @@ namespace SeenBetterDays.Geometry
         /// wall is large - otherwise a facade made of many small panels attracts marks away from a
         /// plain one beside it, for no reason a player could see.
         /// </summary>
-        public static int CollectFacadePoints(
+        public static int CollectLocalFacadePoints(
             EntityManager entityManager,
             Entity building,
             List<SurfacePoint> into,
@@ -204,7 +205,6 @@ namespace SeenBetterDays.Geometry
                 return 0;
             }
 
-            Transform transform = entityManager.GetComponentData<Transform>(building);
             DynamicBuffer<SubMesh> subMeshes = entityManager.GetBuffer<SubMesh>(prefab, true);
 
             for (int i = 0; i < subMeshes.Length && into.Count < limit; i++)
@@ -248,10 +248,6 @@ namespace SeenBetterDays.Geometry
                         b = math.mul(subMesh.m_Rotation, b) + subMesh.m_Position;
                         c = math.mul(subMesh.m_Rotation, c) + subMesh.m_Position;
                     }
-
-                    a = transform.m_Position + math.mul(transform.m_Rotation, a);
-                    b = transform.m_Position + math.mul(transform.m_Rotation, b);
-                    c = transform.m_Position + math.mul(transform.m_Rotation, c);
 
                     float3 cross = math.cross(b - a, c - a);
                     float twiceArea = math.length(cross);

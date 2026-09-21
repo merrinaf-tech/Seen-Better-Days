@@ -59,6 +59,13 @@ namespace SeenBetterDays.Rendering
         /// </summary>
         private const int MaxPerBuilding = 24;
 
+        /// <summary>
+        /// Local wall samples are shared by every instance of a prefab. Keep the cache bounded by
+        /// point count rather than prefab count: a simple house and a complex station differ by
+        /// orders of magnitude, while each point has the same memory cost.
+        /// </summary>
+        private const int MaxCachedSurfacePoints = 120000;
+
         /// <summary>One candidate can land over a window, an archway or a gap between wings.
         /// Try a second point on each facade before giving up on the mark. This is deliberately
         /// small: the current probe walks mesh triangles on the main thread.</summary>
@@ -251,7 +258,7 @@ namespace SeenBetterDays.Rendering
             Unity.Mathematics.Random rng = new Unity.Mathematics.Random(profile.Seed == 0u ? 1u : profile.Seed);
 
             m_LastFamilies.Clear();
-            BuildingSurfaceProbe.CollectFacadePoints(m_EntityManager, building, m_Surface);
+            PrepareSurfaceTemplate(building);
             m_SurfaceHits = 0;
             m_SurfaceRecoveries = 0;
             m_SurfaceMisses = 0;
@@ -335,10 +342,54 @@ namespace SeenBetterDays.Rendering
         /// Clamped because the point is proportion, not a tower buried in graffiti.</summary>
         private float m_WallScale = 1f;
 
-        /// <summary>Every piece of real wall on the building being planned, gathered in one pass.
-        /// Reused between buildings so a plan does not allocate.</summary>
-        private readonly List<BuildingSurfaceProbe.SurfacePoint> m_Surface =
-            new List<BuildingSurfaceProbe.SurfacePoint>(2048);
+        /// <summary>Every prefab-local wall sample for the building being planned. The list itself
+        /// is shared by all instances of that prefab; only sampled points are transformed.</summary>
+        private List<BuildingSurfaceProbe.SurfacePoint> m_Surface =
+            new List<BuildingSurfaceProbe.SurfacePoint>(0);
+        private readonly Dictionary<Entity, List<BuildingSurfaceProbe.SurfacePoint>> m_SurfaceTemplates =
+            new Dictionary<Entity, List<BuildingSurfaceProbe.SurfacePoint>>();
+        private Transform m_SurfaceTransform;
+        private int m_CachedSurfacePointCount;
+        private bool m_SurfaceTemplateCacheHit;
+
+        private void PrepareSurfaceTemplate(Entity building)
+        {
+            m_SurfaceTransform = m_EntityManager.GetComponentData<Transform>(building);
+            Entity prefab = m_EntityManager.GetComponentData<PrefabRef>(building).m_Prefab;
+
+            List<BuildingSurfaceProbe.SurfacePoint> cached;
+            if (m_SurfaceTemplates.TryGetValue(prefab, out cached))
+            {
+                m_Surface = cached;
+                m_SurfaceTemplateCacheHit = true;
+                return;
+            }
+
+            var collected = new List<BuildingSurfaceProbe.SurfacePoint>(2048);
+            BuildingSurfaceProbe.CollectLocalFacadePoints(
+                m_EntityManager,
+                building,
+                collected);
+
+            m_Surface = collected;
+            m_SurfaceTemplateCacheHit = false;
+
+            // An empty result often means the game's mesh buffers have not become resident yet.
+            // Do not remember it: a later pass must be allowed to try again.
+            if (collected.Count == 0)
+            {
+                return;
+            }
+
+            if (m_CachedSurfacePointCount + collected.Count > MaxCachedSurfacePoints)
+            {
+                m_SurfaceTemplates.Clear();
+                m_CachedSurfacePointCount = 0;
+            }
+
+            m_SurfaceTemplates[prefab] = collected;
+            m_CachedSurfacePointCount += collected.Count;
+        }
 
         /// <summary>Which families the last plan actually used, so "is it even placing graffiti?"
         /// is answered by the log rather than by reading the code.</summary>
@@ -697,7 +748,8 @@ namespace SeenBetterDays.Rendering
                      + " skipped (no mesh surface), facades=" + DescribeSurfaceSides()
                      + ", covered=" + CountPlannedFacades() + "/" + m_Facades.Count
                      + ", front=" + m_FrontMarkCount + " mark(s) including "
-                     + m_FrontGraffitiCount + " graffiti";
+                     + m_FrontGraffitiCount + " graffiti, mesh template="
+                     + (m_SurfaceTemplateCacheHit ? "cached" : "new");
             }
         }
 
@@ -908,15 +960,18 @@ namespace SeenBetterDays.Rendering
             {
                 int candidate = rng.NextInt(0, m_Surface.Count);
                 BuildingSurfaceProbe.SurfacePoint point = m_Surface[candidate];
+                float3 worldNormal = math.mul(m_SurfaceTransform.m_Rotation, point.m_Normal);
 
                 // Facing roughly the same way as this side of the building. Loose, so that
                 // chamfers, bays and angled wings stay eligible.
-                if (math.dot(point.m_Normal, facade.Normal) < 0.4f)
+                if (math.dot(worldNormal, facade.Normal) < 0.4f)
                 {
                     continue;
                 }
 
-                float distance = math.distancesq(point.m_Position, target);
+                float3 worldPosition = m_SurfaceTransform.m_Position
+                                     + math.mul(m_SurfaceTransform.m_Rotation, point.m_Position);
+                float distance = math.distancesq(worldPosition, target);
                 if (distance < bestDistance)
                 {
                     bestDistance = distance;
@@ -930,12 +985,15 @@ namespace SeenBetterDays.Rendering
             }
 
             BuildingSurfaceProbe.SurfacePoint chosen = m_Surface[best];
+            float3 chosenPosition = m_SurfaceTransform.m_Position
+                                  + math.mul(m_SurfaceTransform.m_Rotation, chosen.m_Position);
+            float3 chosenNormal = math.mul(m_SurfaceTransform.m_Rotation, chosen.m_Normal);
 
-            float3 up = InvertProjection ? -chosen.m_Normal : chosen.m_Normal;
+            float3 up = InvertProjection ? -chosenNormal : chosenNormal;
             float3 alongSurface = math.up() - up * math.dot(math.up(), up);
             float3 forward = math.normalizesafe(alongSurface, facade.Up);
 
-            position = chosen.m_Position + up * NormalOffsetMetres;
+            position = chosenPosition + up * NormalOffsetMetres;
             rotation = quaternion.LookRotationSafe(forward, up);
             return true;
         }
