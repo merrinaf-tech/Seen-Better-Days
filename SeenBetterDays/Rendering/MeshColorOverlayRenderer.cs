@@ -376,6 +376,18 @@ namespace SeenBetterDays.Rendering
                 return false;
             }
 
+            return StillOurs(building, record);
+        }
+
+        private bool StillOurs(Entity building, Record record)
+        {
+            if (!m_EntityManager.Exists(building)
+                || !m_EntityManager.HasBuffer<CustomMeshColor>(building)
+                || !m_EntityManager.IsComponentEnabled<CustomMeshColor>(building))
+            {
+                return false;
+            }
+
             DynamicBuffer<CustomMeshColor> custom = m_EntityManager.GetBuffer<CustomMeshColor>(building, true);
             return custom.Length > 0 && Same(custom[0].m_ColorSet, record.m_Written);
         }
@@ -562,12 +574,23 @@ namespace SeenBetterDays.Rendering
 
         public bool Remove(Entity building)
         {
-            if (!m_Records.Remove(building))
+            Record record;
+            if (!m_Records.TryGetValue(building, out record))
             {
                 return false;
             }
 
-            RestoreColours(building);
+            // CustomMeshColor is shared with recolouring mods and carries no author id. If its
+            // value no longer matches what we wrote, another system has taken ownership since our
+            // last pass. Forget our record without deleting or replacing that newer colour.
+            bool restore = StillOurs(building, record);
+            m_Records.Remove(building);
+
+            if (restore)
+            {
+                RestoreColours(building);
+            }
+
             return true;
         }
 
@@ -577,7 +600,10 @@ namespace SeenBetterDays.Rendering
 
             foreach (KeyValuePair<Entity, Record> pair in m_Records)
             {
-                RestoreColours(pair.Key);
+                if (StillOurs(pair.Key, pair.Value))
+                {
+                    RestoreColours(pair.Key);
+                }
             }
 
             m_Records.Clear();

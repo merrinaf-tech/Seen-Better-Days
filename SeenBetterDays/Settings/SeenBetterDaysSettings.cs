@@ -68,12 +68,9 @@ namespace SeenBetterDays.Settings
         public int Intensity { get; set; } = DefaultIntensity;
 
         /// <summary>
-        /// Removes every visual override that can have been left by this or an older build, then
-        /// lets the current build calculate the city again from clean game colours.
-        ///
-        /// This is intentionally an explicit, confirmed repair action. Old builds wrote through
-        /// the same CustomMeshColor slot used by recolouring mods, and that slot has no author id;
-        /// a guaranteed clean baseline therefore also clears user recolours on growables.
+        /// Removes the appearance currently managed by this instance of the mod, then lets the
+        /// current rules calculate it again. Colours owned by Recolor or another mod are left in
+        /// place because CustomMeshColor has no author id and must never be cleared speculatively.
         /// </summary>
         [SettingsUISection(MainSection, ResetGroup)]
         [SettingsUIButton]

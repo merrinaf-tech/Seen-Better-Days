@@ -2110,12 +2110,6 @@ namespace SeenBetterDays.Rendering
 
             for (int i = 0; i < dead.Count; i++)
             {
-                if (m_Log != null)
-                {
-                    m_Log.Info("Seen Better Days: building " + dead[i].Index
-                             + " is gone or under construction, removing its overlay.");
-                }
-
                 Remove(dead[i]);
             }
 

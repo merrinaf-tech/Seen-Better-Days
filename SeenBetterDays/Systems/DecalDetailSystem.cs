@@ -517,9 +517,6 @@ namespace SeenBetterDays.Systems
 
             m_RejectedPlacements.Remove(building);
 
-            Mod.Log.Info("Seen Better Days: detailed entity " + building.Index + " with " + placed
-                       + " mark(s) - " + renderer.LastPlacementReport
-                       + " | weathering " + (state.m_Weathering * 100f).ToString("0") + "%");
             return true;
         }
 

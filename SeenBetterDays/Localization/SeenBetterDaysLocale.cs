@@ -29,7 +29,7 @@ namespace SeenBetterDays.Localization
 
                 { m_Settings.GetOptionGroupLocaleID(SeenBetterDaysSettings.LayersGroup), "What is drawn" },
                 { m_Settings.GetOptionGroupLocaleID(SeenBetterDaysSettings.AppearanceGroup), "How strongly" },
-                { m_Settings.GetOptionGroupLocaleID(SeenBetterDaysSettings.ResetGroup), "Reset and repair" },
+                { m_Settings.GetOptionGroupLocaleID(SeenBetterDaysSettings.ResetGroup), "Appearance maintenance" },
                 { m_Settings.GetOptionGroupLocaleID(SeenBetterDaysSettings.DeveloperGroup), "Advanced" },
 
                 {
@@ -68,16 +68,13 @@ namespace SeenBetterDays.Localization
 
                 {
                     m_Settings.GetOptionLabelLocaleID(nameof(SeenBetterDaysSettings.ResetCityAppearance)),
-                    "Reset and rebuild the city appearance"
+                    "Rebuild Seen Better Days appearance"
                 },
                 {
                     m_Settings.GetOptionDescLocaleID(nameof(SeenBetterDaysSettings.ResetCityAppearance)),
-                    "Removes all Seen Better Days decals, saved weathering states and custom "
-                  + "building colours, waits for the game to restore the original palettes, then "
-                  + "applies only this version's rules. Use this if an older build left buildings "
-                  + "black or if the result looks cumulative. Because the game stores no author "
-                  + "for a custom colour, this also removes colours applied to growables with "
-                  + "Recolor or another mod."
+                    "Removes the decals and colours currently managed by Seen Better Days, waits "
+                  + "for the original palettes, then applies the current rules again. Colours "
+                  + "that have since been replaced by Recolor or another mod are left untouched."
                 },
 
                 {

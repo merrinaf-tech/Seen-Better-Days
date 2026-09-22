@@ -1190,14 +1190,14 @@ namespace SeenBetterDays.Systems
             }
         }
 
-        /// <summary>Performs the explicit options-page repair, then schedules a clean bounded
-        /// rebuild after the renderer has restored the game's palettes.</summary>
+        /// <summary>Performs the explicit options-page rebuild, then schedules a clean bounded
+        /// pass after the renderer has restored the palettes we actually owned.</summary>
         private void ResetAndRebuildCityAppearance()
         {
             BuildingOverlayTestSystem overlays =
                 World.GetExistingSystemManaged<BuildingOverlayTestSystem>();
             int decals = overlays == null ? 0 : overlays.SuspendDecalsForSave();
-            int buildings = PurgeAllCustomColours();
+            int buildings = ResetAll();
 
             m_RangeKnown = false;
             m_CatchUpRemaining = 0;
@@ -1208,10 +1208,10 @@ namespace SeenBetterDays.Systems
             m_FullSweepPending = false;
             m_ResetCooldownUpdates = 2;
 
-            Mod.Log.Info("Seen Better Days: reset complete - cleared visual state from "
+            Mod.Log.Info("Seen Better Days: rebuild requested - removed owned colours from "
                        + buildings + " growable(s) and removed " + decals
-                       + " decal entit(ies). Waiting for the original palettes, then rebuilding "
-                       + "once with the current version only.");
+                       + " decal entit(ies). External custom colours were preserved; waiting for "
+                       + "the palettes, then applying the current rules once.");
         }
 
         [Preserve]

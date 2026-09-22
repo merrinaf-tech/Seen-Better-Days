@@ -35,12 +35,12 @@ namespace SeenBetterDays
 
         private static int s_CityAppearanceResetRequested;
 
-        /// <summary>Queues a city reset for the simulation thread. Settings buttons can also be
+        /// <summary>Queues a city appearance rebuild for the simulation thread. Settings buttons can also be
         /// pressed in the main menu, so the request stays pending until a playable city exists.</summary>
         public static void RequestCityAppearanceReset()
         {
             Interlocked.Exchange(ref s_CityAppearanceResetRequested, 1);
-            Log.Info("Seen Better Days: city appearance reset requested from the options page.");
+            Log.Info("Seen Better Days: city appearance rebuild requested from the options page.");
         }
 
         internal static bool ConsumeCityAppearanceResetRequest()
@@ -102,11 +102,7 @@ namespace SeenBetterDays
             // the wall can be checked against the number it came from.
             updateSystem.UpdateAt<WeatheringTooltipSystem>(SystemUpdatePhase.UITooltip);
 
-            Log.Info("Seen Better Days loaded. Hotkeys (all Ctrl+Alt+...): "
-                   + "J colour weathering, P measure hand-placed decals, H place a decal at the cursor's raycast hit, Y bare ground probe, T height sweep, A apply, S apply with a different seed, "
-                   + "D remove, X remove all, F cycle facade, K flip projection direction, "
-                   + "G cycle normal offset (metres), N cycle decal, B allow non-building decals, "
-                   + "C dump catalogue, I describe selection, W toggle the automatic weathering, Q census of the city, 1/2/3 colour response, Z strip all custom colours, U toggle the decal detail layer, F1-F5 hold the selected building at Maintained/Aged/Worn/Neglected/Decayed, F6 release it.");
+            Log.Info("Seen Better Days loaded.");
         }
 
         public void OnDispose()
