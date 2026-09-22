@@ -57,8 +57,26 @@ namespace SeenBetterDays.Systems
             SaveMutationGate.BlockAfterSerializationStarts();
 
             Stopwatch stopwatch = Stopwatch.StartNew();
+
+            // PreSerialize is outside the normal system update chain. EntityManager completes the
+            // dependencies of each component we touch, but that is not enough for native rendering
+            // jobs which have already gathered batches containing these entities. Removing more
+            // than a thousand colour buffers and tagging decal entities while one of those jobs is
+            // still running can leave it holding stale chunk data. The failure then appears later
+            // as an access violation in Burst rather than as a managed exception here.
+            //
+            // Complete every tracked ECS job before making the save-time structural changes. This
+            // is deliberately one barrier per save, not one per building.
+            EntityManager.CompleteAllTrackedJobs();
+            double synchronizationMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+
             int stripped = m_Weathering.SuspendForSave();
             int strippedDecals = m_OverlayTest.SuspendDecalsForSave();
+
+            // The mutations above are synchronous, but the render invalidation path may have
+            // registered fresh tracked work while the affected batches were marked dirty. Finish
+            // that work before the serializer creates its entity table from the changed world.
+            EntityManager.CompleteAllTrackedJobs();
             stopwatch.Stop();
 
             if (stripped > 0 || strippedDecals > 0)
@@ -67,7 +85,9 @@ namespace SeenBetterDays.Systems
                            + " building(s) and removed " + strippedDecals
                            + " temporary decal entit(ies) in "
                            + stopwatch.Elapsed.TotalMilliseconds.ToString("0.0")
-                           + " ms before the serializer created its entity table. "
+                           + " ms before the serializer created its entity table ("
+                           + synchronizationMilliseconds.ToString("0.0")
+                           + " ms waiting for existing ECS jobs). "
                            + "Automatic colour weathering goes back on after serialization; "
                            + "developer decal samples stay cleared.");
             }
