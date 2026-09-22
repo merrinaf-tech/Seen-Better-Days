@@ -317,7 +317,7 @@ namespace SeenBetterDays.Systems
                             && code != UnityEngine.InputSystem.Key.RightCtrl)
                         {
                             Mod.Log.Warn("Seen Better Days: ignored Ctrl+Alt+" + code
-                                       + " while a save is finishing; try again in three seconds.");
+                                       + " while a save is finishing; try again after the visual safety delay.");
                             break;
                         }
                     }

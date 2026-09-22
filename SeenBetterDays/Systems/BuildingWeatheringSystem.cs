@@ -44,7 +44,7 @@ namespace SeenBetterDays.Systems
         /// writes and their structural changes into a single frame. A bounded batch keeps that
         /// work measurable and lets the game render between slices.
         /// </summary>
-        private const int CatchUpBuildingsPerUpdate = 512;
+        private const int CatchUpBuildingsPerUpdate = 256;
 
         /// <summary>How much the weathering must move before it is worth rewriting colours.
         /// Below this the change would not be visible and the redraw would be waste.</summary>

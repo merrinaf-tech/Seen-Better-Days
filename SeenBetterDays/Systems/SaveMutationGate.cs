@@ -16,7 +16,11 @@ namespace SeenBetterDays.Systems
     /// </summary>
     internal static class SaveMutationGate
     {
-        private const float ResumeDelaySeconds = 3f;
+        // Three seconds still let a 2,193-growable city resume while Burst rendering work from
+        // the save transition was alive, producing a repeatable access violation in
+        // lib_burst_generated.dll. Ten seconds keeps the transient visuals absent briefly, but it
+        // gives native render jobs a real settling window after the writer reports completion.
+        private const float ResumeDelaySeconds = 10f;
         private static float s_BlockedUntil;
         private static bool s_SavePendingResume;
 
@@ -38,7 +42,7 @@ namespace SeenBetterDays.Systems
             if (s_SavePendingResume)
             {
                 s_SavePendingResume = false;
-                Mod.Log.Info("Seen Better Days: save write finished and the three-second safety "
+                Mod.Log.Info("Seen Better Days: save write finished and the ten-second safety "
                            + "delay elapsed; visual updates may resume.");
             }
 

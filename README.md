@@ -29,8 +29,8 @@ This is a private developer build. The rendering investigation is recorded in
   triangles supply the actual position and normal.
 - Nothing is stored in the city. Colour overrides and decal entities are removed during
   serialization and rebuilt from data the game already saves. Automatic rebuilding and developer
-  hotkeys pause for three seconds after serialization starts, so they cannot structurally modify
-  entities while the save snapshot is still being written.
+  hotkeys stay paused while the save writer is active and for ten seconds afterwards, so they
+  cannot structurally modify the world while native save and rendering work is settling.
 
 ## Options
 
