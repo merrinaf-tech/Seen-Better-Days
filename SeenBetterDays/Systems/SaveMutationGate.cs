@@ -18,6 +18,7 @@ namespace SeenBetterDays.Systems
     {
         private const float ResumeDelaySeconds = 3f;
         private static float s_BlockedUntil;
+        private static bool s_SavePendingResume;
 
         public static bool IsBlocked(SaveGameSystem saveGameSystem)
         {
@@ -25,15 +26,29 @@ namespace SeenBetterDays.Systems
             if (saveGameSystem != null && saveGameSystem.Enabled)
             {
                 s_BlockedUntil = Mathf.Max(s_BlockedUntil, now + ResumeDelaySeconds);
+                s_SavePendingResume = true;
                 return true;
             }
 
-            return now < s_BlockedUntil;
+            if (now < s_BlockedUntil)
+            {
+                return true;
+            }
+
+            if (s_SavePendingResume)
+            {
+                s_SavePendingResume = false;
+                Mod.Log.Info("Seen Better Days: save write finished and the three-second safety "
+                           + "delay elapsed; visual updates may resume.");
+            }
+
+            return false;
         }
 
         public static void BlockAfterSerializationStarts()
         {
             s_BlockedUntil = Mathf.Max(s_BlockedUntil, Time.realtimeSinceStartup + ResumeDelaySeconds);
+            s_SavePendingResume = true;
         }
     }
 }
