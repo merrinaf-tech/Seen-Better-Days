@@ -162,10 +162,10 @@ namespace SeenBetterDays.Systems
         /// Reports the state of the city once, as soon as it has finished loading.
         ///
         /// This exists to answer one question without anyone having to remember to ask it: does a
-        /// city saved while weathered come back clean? `WeatheringSaveGuardSystem` strips the mod
-        /// out at `SystemUpdatePhase.Serialize`, but whether that phase runs before the entity
-        /// data is written is a claim about the engine, and the proof of it is the line below
-        /// reading "0 already recoloured" on a city that was saved dirty.
+        /// city saved while weathered come back clean? `WeatheringSaveGuardSystem` writes the
+        /// vanilla override inactive and pristine at `SystemUpdatePhase.Serialize`, but whether
+        /// that phase runs before the entity data is written is a claim about the engine. The
+        /// proof is the line below reading "0 already recoloured" on a city saved while dirty.
         ///
         /// It is also simply the right place for it: a diagnostic that has to be triggered by hand
         /// is one that gets run when someone remembers, which is not the same as when it matters.
@@ -196,7 +196,8 @@ namespace SeenBetterDays.Systems
             // CustomMeshColor it produced. The in-memory ownership record does not survive a
             // reload, so applying again would otherwise treat the already dark colour as a new
             // clean baseline and compound it. Repair those marked leftovers before the first
-            // sweep. Current saves contain neither because WeatheringSaveGuardSystem strips them.
+            // sweep. Current saves write no WeatheringState and leave only an inactive pristine
+            // vanilla colour buffer.
             m_LegacyCleanupPending = true;
             m_FullSweepPending = false;
             m_Pinned.Clear();
@@ -217,6 +218,14 @@ namespace SeenBetterDays.Systems
             if (SaveMutationGate.IsBlocked(m_SaveGameSystem))
             {
                 return;
+            }
+
+            int resumedAfterSave = m_Renderer.ResumeAfterSave();
+            if (resumedAfterSave > 0)
+            {
+                Mod.Log.Info("Seen Better Days: re-enabled " + resumedAfterSave
+                           + " weathering colour override(s) after saving without rebuilding "
+                           + "their ECS components.");
             }
 
             if (Mod.ConsumeCityAppearanceResetRequest())
@@ -1027,40 +1036,23 @@ namespace SeenBetterDays.Systems
         }
 
         /// <summary>
-        /// Takes every trace of this mod off the city's entities, and arranges to put the look
-        /// back on the next update.
+        /// Makes this mod's colour overrides inactive while the game snapshots the city.
         ///
         /// Called immediately before the game writes a save. `CustomMeshColor` is a vanilla
         /// component and **is** saved, so a city saved while weathered came back with the
         /// weathering baked in and no record of what was underneath - 1069 buildings out of 1801
         /// in one test city, permanently stuck and refused by the mod thereafter.
         ///
-        /// Stripping rather than storing is the right answer here, not just the cautious one.
-        /// The weathering is a pure function of circumstances the game already saves - condition,
-        /// land value, level, efficiency - so there is nothing to preserve: a loaded city
-        /// recomputes an identical result on first sight. It also means a save made with this mod
-        /// installed stays loadable by someone who does not have it.
+        /// The first implementation removed and later recreated thousands of buffers and state
+        /// components. That made the saved data clean, but invalidated enough render-side ECS data
+        /// to produce delayed access violations in Burst. CustomMeshColor is enableable, so an
+        /// inactive buffer is the safe representation: it has no visual effect without the mod,
+        /// and changing its enable bit does not move entities between chunks. WeatheringState is a
+        /// runtime-only component and is therefore omitted by the serializer automatically.
         /// </summary>
         public int SuspendForSave()
         {
-            List<Entity> tracked = new List<Entity>();
-            m_Renderer.CollectTrackedBuildings(tracked);
-
-            for (int i = 0; i < tracked.Count; i++)
-            {
-                Entity building = tracked[i];
-                m_Renderer.Forget(building);
-
-                if (EntityManager.HasComponent<WeatheringState>(building))
-                {
-                    EntityManager.RemoveComponent<WeatheringState>(building);
-                }
-            }
-
-            // Everything comes back in one pass, and every building is a first sight again - which
-            // lands on exactly the value it had, because the target never depended on history.
-            m_FullSweepPending = true;
-            return tracked.Count;
+            return m_Renderer.SuspendForSave();
         }
 
         /// <summary>Recomputes the colours of every building this system is weathering, without

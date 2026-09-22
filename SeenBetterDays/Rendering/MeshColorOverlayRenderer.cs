@@ -48,6 +48,8 @@ namespace SeenBetterDays.Rendering
         }
 
         private readonly Dictionary<Entity, Record> m_Records = new Dictionary<Entity, Record>();
+        private readonly Dictionary<Entity, ColorSet> m_SaveSuspended =
+            new Dictionary<Entity, ColorSet>();
 
         public MeshColorOverlayRenderer(EntityManager entityManager, ILog log)
         {
@@ -388,8 +390,119 @@ namespace SeenBetterDays.Rendering
                 return false;
             }
 
+            return MatchesWrittenColour(building, record);
+        }
+
+        private bool MatchesWrittenColour(Entity building, Record record)
+        {
+            if (!m_EntityManager.Exists(building)
+                || !m_EntityManager.HasBuffer<CustomMeshColor>(building))
+            {
+                return false;
+            }
+
             DynamicBuffer<CustomMeshColor> custom = m_EntityManager.GetBuffer<CustomMeshColor>(building, true);
             return custom.Length > 0 && Same(custom[0].m_ColorSet, record.m_Written);
+        }
+
+        /// <summary>
+        /// Makes this renderer's vanilla colour overrides inactive while the serializer reads the
+        /// world. CustomMeshColor is enableable, so this changes an enable bit without moving any
+        /// entity to another archetype or invalidating a chunk. Its stored value is replaced with
+        /// the pristine colour as well, so the save is harmless even if a future engine version
+        /// does not preserve the enable bit. The live MeshColor buffer remains as it was, which
+        /// avoids a visible clean/dirty flash while saving.
+        /// </summary>
+        public int SuspendForSave()
+        {
+            int disabled = 0;
+
+            foreach (KeyValuePair<Entity, Record> pair in m_Records)
+            {
+                Entity building = pair.Key;
+                if (!m_EntityManager.Exists(building)
+                    || !m_EntityManager.HasBuffer<CustomMeshColor>(building)
+                    || !m_EntityManager.IsComponentEnabled<CustomMeshColor>(building)
+                    || !MatchesWrittenColour(building, pair.Value)
+                    || !m_EntityManager.HasBuffer<PristineMeshColor>(building))
+                {
+                    continue;
+                }
+
+                DynamicBuffer<PristineMeshColor> pristine =
+                    m_EntityManager.GetBuffer<PristineMeshColor>(building, true);
+                if (pristine.Length == 0)
+                {
+                    continue;
+                }
+
+                ColorSet clean = pristine[0].m_ColorSet;
+                DynamicBuffer<CustomMeshColor> custom =
+                    m_EntityManager.GetBuffer<CustomMeshColor>(building);
+                for (int i = 0; i < custom.Length; i++)
+                {
+                    custom[i] = new CustomMeshColor { m_ColorSet = clean };
+                }
+
+                m_EntityManager.SetComponentEnabled<CustomMeshColor>(building, false);
+                m_SaveSuspended[building] = clean;
+                disabled++;
+            }
+
+            return disabled;
+        }
+
+        /// <summary>
+        /// Reactivates the exact buffers disabled by <see cref="SuspendForSave"/>. No component is
+        /// added and no MeshColor rebuild is requested: the live colour never changed. If another
+        /// mod altered a buffer while the save was in progress, its value is left alone.
+        /// </summary>
+        public int ResumeAfterSave()
+        {
+            if (m_SaveSuspended.Count == 0)
+            {
+                return 0;
+            }
+
+            // This runs once after the writer and its grace period have completed. Synchronizing
+            // here keeps the enable-bit changes away from native jobs that may be reading the same
+            // chunks, without imposing a barrier during ordinary weathering updates.
+            m_EntityManager.CompleteAllTrackedJobs();
+
+            int enabled = 0;
+            foreach (KeyValuePair<Entity, ColorSet> suspended in m_SaveSuspended)
+            {
+                Entity building = suspended.Key;
+                Record record;
+                if (!m_EntityManager.Exists(building)
+                    || !m_Records.TryGetValue(building, out record)
+                    || !m_EntityManager.HasBuffer<CustomMeshColor>(building)
+                    || m_EntityManager.IsComponentEnabled<CustomMeshColor>(building)
+                    || !CustomColourEquals(building, suspended.Value))
+                {
+                    continue;
+                }
+
+                DynamicBuffer<CustomMeshColor> custom =
+                    m_EntityManager.GetBuffer<CustomMeshColor>(building);
+                for (int i = 0; i < custom.Length; i++)
+                {
+                    custom[i] = new CustomMeshColor { m_ColorSet = record.m_Written };
+                }
+
+                m_EntityManager.SetComponentEnabled<CustomMeshColor>(building, true);
+                enabled++;
+            }
+
+            m_SaveSuspended.Clear();
+            return enabled;
+        }
+
+        private bool CustomColourEquals(Entity building, ColorSet expected)
+        {
+            DynamicBuffer<CustomMeshColor> custom =
+                m_EntityManager.GetBuffer<CustomMeshColor>(building, true);
+            return custom.Length > 0 && Same(custom[0].m_ColorSet, expected);
         }
 
         /// <summary>
