@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<OutputType>Library</OutputType>
@@ -102,4 +102,23 @@
 		<Delete Files="@(SymbolsToStrip)" />
 	</Target>
 
+  <!--
+    Refuses to build while Cities Skylines II is running.
+
+    A build deletes the deployed mod folder before copying into it, then fails on the native DLL
+    the running game holds open - leaving the mod uninstalled until someone rebuilds. This has
+    happened repeatedly despite being written down, so it is a check rather than a note.
+
+    It runs before anything is deleted, and only on Windows. If it ever gets in the way of a
+    deliberate compile-only pass, build with -p:SkipGameRunningCheck=true.
+  -->
+  <Target Name="RefuseWhileGameRunning" BeforeTargets="BeforeBuild"
+          Condition="'$(OS)' == 'Windows_NT' AND '$(SkipGameRunningCheck)' != 'true'">
+    <Exec Command="powershell -NoProfile -Command &quot;$p = Get-Process Cities2 -ErrorAction SilentlyContinue; if ($p) { exit 1 } else { exit 0 }&quot;"
+          ContinueOnError="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="Cities2Running" />
+    </Exec>
+    <Error Condition="'$(Cities2Running)' != '0'"
+           Text="Cities Skylines II is running. Building deletes the deployed mod folder and then fails on the locked native DLL, leaving the mod uninstalled. Close the game, then build again." />
+  </Target>
 </Project>
