@@ -41,6 +41,7 @@ namespace SeenBetterDays.Systems
         private SelectedInfoUISystem m_SelectedInfoUISystem;
         private Game.Rendering.CameraUpdateSystem m_CameraUpdateSystem;
         private Game.Tools.ToolRaycastSystem m_ToolRaycastSystem;
+        private Game.Serialization.SaveGameSystem m_SaveGameSystem;
 
         private EntityQuery m_ObjectPrefabQuery;
         private EntityQuery m_GrowableQuery;
@@ -84,6 +85,7 @@ namespace SeenBetterDays.Systems
             base.OnCreate();
 
             m_PrefabSystem = World.GetOrCreateSystemManaged<PrefabSystem>();
+            m_SaveGameSystem = World.GetOrCreateSystemManaged<Game.Serialization.SaveGameSystem>();
 
             // Every object prefab. The catalogue filters this down to decals itself; asking the
             // query for "decals" is not possible because decal-ness lives on the mesh prefab.
@@ -294,7 +296,7 @@ namespace SeenBetterDays.Systems
                 return;
             }
 
-            if (SaveMutationGate.IsBlocked)
+            if (SaveMutationGate.IsBlocked(m_SaveGameSystem))
             {
                 // Report a chord that was deliberately refused. The allKeys walk is defensive for
                 // the same reason as the normal read-out below: some keyboard layouts expose

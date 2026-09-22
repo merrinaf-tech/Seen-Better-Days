@@ -1,4 +1,5 @@
 using UnityEngine;
+using Game.Serialization;
 
 namespace SeenBetterDays.Systems
 {
@@ -7,19 +8,27 @@ namespace SeenBetterDays.Systems
     /// snapshotting the world.
     ///
     /// The serialize-phase guard removes all of our structural changes before a save. Recreating
-    /// them on the next modification frame is too early: a measured crash followed a save-strip
-    /// by 38 ms, when Ctrl+Alt+F1 immediately changed the selected building. Unity then died in
-    /// native code with no managed stack. A short real-time quarantine covers both manual keys and
-    /// automatic passes without trying to infer the serializer's private completion state.
+    /// them on the next modification frame is too early: the serializer keeps writing in jobs
+    /// after its entity table has been created. <see cref="SaveGameSystem.Enabled"/> stays true
+    /// until that write dependency has completed, so follow it and keep a short grace period after
+    /// the last active frame. This covers automatic passes and manual keys without guessing how
+    /// long a small or large city takes to save.
     /// </summary>
     internal static class SaveMutationGate
     {
         private const float ResumeDelaySeconds = 3f;
         private static float s_BlockedUntil;
 
-        public static bool IsBlocked
+        public static bool IsBlocked(SaveGameSystem saveGameSystem)
         {
-            get { return Time.realtimeSinceStartup < s_BlockedUntil; }
+            float now = Time.realtimeSinceStartup;
+            if (saveGameSystem != null && saveGameSystem.Enabled)
+            {
+                s_BlockedUntil = Mathf.Max(s_BlockedUntil, now + ResumeDelaySeconds);
+                return true;
+            }
+
+            return now < s_BlockedUntil;
         }
 
         public static void BlockAfterSerializationStarts()

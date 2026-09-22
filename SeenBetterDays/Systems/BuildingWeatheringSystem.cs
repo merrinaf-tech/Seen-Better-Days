@@ -51,6 +51,7 @@ namespace SeenBetterDays.Systems
         private const float RedrawThreshold = 0.02f;
 
         private Game.Simulation.CitySystem m_CitySystem;
+        private Game.Serialization.SaveGameSystem m_SaveGameSystem;
         private MeshColorOverlayRenderer m_Renderer;
         private EntityQuery m_GrowableQuery;
         private EntityQuery m_UnderConstructionQuery;
@@ -122,6 +123,7 @@ namespace SeenBetterDays.Systems
             base.OnCreate();
 
             m_CitySystem = World.GetOrCreateSystemManaged<Game.Simulation.CitySystem>();
+            m_SaveGameSystem = World.GetOrCreateSystemManaged<Game.Serialization.SaveGameSystem>();
             m_Renderer = new MeshColorOverlayRenderer(EntityManager, Mod.Log);
 
             m_GrowableQuery = GetEntityQuery(new EntityQueryDesc
@@ -212,7 +214,7 @@ namespace SeenBetterDays.Systems
         [Preserve]
         protected override void OnUpdate()
         {
-            if (SaveMutationGate.IsBlocked)
+            if (SaveMutationGate.IsBlocked(m_SaveGameSystem))
             {
                 return;
             }
