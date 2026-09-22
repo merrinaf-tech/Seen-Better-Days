@@ -274,6 +274,11 @@ namespace SeenBetterDays.Rendering
             // front, then continue round-robin so additional marks still cover the whole shell.
             m_NextFacade = FindFacade(FacadeSide.Front);
 
+            // Aged has only cracks available. Reserve one on the road-facing wall before the
+            // round-robin spends its small budget on the long sides; later states have additional
+            // families that already give the recovery pass several ways to fill the front.
+            PlanRequiredFrontAgedCrack(building, profile, ref rng);
+
             // At Neglected and Decayed, a player looking from the road must actually be able to
             // read the newly introduced graffiti family. A purely round-robin plan can truthfully
             // contain four graffiti while putting every recognisable one on a flank or the rear.
@@ -1031,21 +1036,74 @@ namespace SeenBetterDays.Rendering
         }
 
         /// <summary>
-        /// Decides how many marks each family gets, then places them.
-        ///
-        /// The families used to be planned one after another, each taking what it wanted until the
-        /// per-building cap ran out. On a badly weathered tower that is not a budget, it is a
-        /// queue: dirt alone asked for fifteen marks against a cap of ten, took all of them, and
-        /// every family behind it - including graffiti - got nothing. The building came out
-        /// uniformly grubby instead of looking like a place in trouble, and "why are there never
-        /// any graffiti?" turned out to be a scheduling question rather than a weighting one.
-        ///
-        /// The budget is now shared out in proportion, by largest remainder: everyone is scaled
-        /// down together, whole marks go to the largest claims, and what is left over goes to the
-        /// families with the biggest unmet fractions. A family that asked for a mark and can be
-        /// afforded one gets one, which is what keeps rust on the industrial buildings and
-        /// graffiti on the commercial ones visible at the top of the scale rather than crowded out
-        /// by dirt.
+        /// Reserves one crack on the road-facing wall for Aged buildings. This state has no other
+        /// active family to recover the front when a first crack choice misses its usable masonry.
+        /// </summary>
+        private void PlanRequiredFrontAgedCrack(
+            Entity building,
+            in BuildingVisualProfile profile,
+            ref Unity.Mathematics.Random rng)
+        {
+            if (profile.State != VisualState.Aged
+                || math.saturate(profile.Crack) <= 0.01f
+                || ForcedDecal != null
+                || AllowNonBuildingDecals
+                || !m_Catalog.HasAutomaticFamily(OverlayFamily.Crack))
+            {
+                return;
+            }
+
+            int frontIndex = FindFacade(FacadeSide.Front);
+            BuildingFacade front = m_Facades[frontIndex];
+            if (!m_Catalog.HasAutomaticFamilyThatFits(
+                OverlayFamily.Crack,
+                front.Width,
+                front.Height))
+            {
+                return;
+            }
+
+            // "Fits the facade" only checks the projector footprint. On a narrow street wall a
+            // particular crack can still land entirely over windows or doors, so retry both the
+            // catalogue choice and the sampled position before accepting that the wall is unusable.
+            for (int decalAttempt = 0; decalAttempt < 4; decalAttempt++)
+            {
+                bool familyMatched;
+                DecalPrefabInfo decal = m_Catalog.Pick(
+                    OverlayFamily.Crack,
+                    false,
+                    front.Width,
+                    front.Height,
+                    ref rng,
+                    out familyMatched);
+
+                if (decal == null)
+                {
+                    return;
+                }
+
+                for (int placementAttempt = 0;
+                     placementAttempt < PlacementAttemptsPerFacade;
+                     placementAttempt++)
+                {
+                    if (TryPlanMarkOnFacade(
+                        building,
+                        OverlayFamily.Crack,
+                        decal,
+                        frontIndex,
+                        ref rng))
+                    {
+                        m_NextFacade = (frontIndex + 1) % m_Facades.Count;
+                        return;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reserves one visible graffiti projector on the road-facing wall when that family is
+        /// active. The proportional planner accounts for this mark when sharing the remaining
+        /// budget.
         /// </summary>
         private void PlanRequiredFrontGraffiti(
             Entity building,
@@ -1108,6 +1166,14 @@ namespace SeenBetterDays.Rendering
             }
         }
 
+        /// <summary>
+        /// Decides how many marks each family gets, then places them.
+        ///
+        /// The budget is shared out in proportion, by largest remainder: everyone is scaled down
+        /// together, whole marks go to the largest claims, and what is left over goes to the
+        /// families with the biggest unmet fractions. A family that asked for a mark and can be
+        /// afforded one gets one, which keeps later families from being crowded out by dirt.
+        /// </summary>
         private void PlanAllFamilies(Entity building, in BuildingVisualProfile profile, ref Unity.Mathematics.Random rng)
         {
             float scale = Mod.Settings != null ? Mod.Settings.IntensityScale : 1f;
