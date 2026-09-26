@@ -1540,16 +1540,41 @@ namespace SeenBetterDays.Systems
         }
 
         /// <summary>
-        /// Removes every decal entity created by this mod before the serializer snapshots the
-        /// world. Unlike the colour layer, these developer-harness decals are not reconstructed
-        /// after saving; the player can place a fresh deterministic sample with Ctrl+Alt+V.
+        /// Removes every decal entity created by this mod for an explicit appearance reset.
+        /// Saves use a filtered serializer query and leave live decals untouched.
         /// </summary>
-        public int SuspendDecalsForSave()
+        public int ClearDecalsForReset()
         {
             int trackedEntities = m_Renderer.OverlayCount;
             m_Renderer.RemoveAll();
             int strayEntities = m_Renderer.SweepStrayOverlays();
             return trackedEntities + strayEntities;
+        }
+
+        /// <summary>Includes untracked decals recovered from a save or interrupted apply.</summary>
+        public int ActiveDecalEntityCount => m_OverlayQuery.CalculateEntityCount();
+
+        /// <summary>Checks the actual serializer query, not just its declared component types.</summary>
+        public int CountDecalsInQuery(EntityQuery query)
+        {
+            NativeArray<Entity> decals = m_OverlayQuery.ToEntityArray(Allocator.TempJob);
+            try
+            {
+                int included = 0;
+                for (int i = 0; i < decals.Length; i++)
+                {
+                    if (query.MatchesIgnoreFilter(decals[i]))
+                    {
+                        included++;
+                    }
+                }
+
+                return included;
+            }
+            finally
+            {
+                decals.Dispose();
+            }
         }
 
         private void CycleFacade()

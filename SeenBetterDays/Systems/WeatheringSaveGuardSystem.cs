@@ -1,7 +1,12 @@
 using Game;
 using Game.Serialization;
 using Colossal.Serialization.Entities;
+using SeenBetterDays.Data;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Reflection;
+using Unity.Entities;
 using UnityEngine.Scripting;
 
 namespace SeenBetterDays.Systems
@@ -17,9 +22,12 @@ namespace SeenBetterDays.Systems
     /// colours, which the mod then correctly refused to touch - correctly, and uselessly.
     ///
     /// So this system runs at <see cref="SystemUpdatePhase.Serialize"/>, disables colour overrides
-    /// without structurally changing building entities, and removes temporary decals. The live
-    /// MeshColor stays weathered while saving; the inactive override is harmless in the save and
-    /// is re-enabled after the writer finishes. Runtime WeatheringState is not serializable.
+    /// without structurally changing building entities, and excludes our decal entities from the
+    /// serializer's query. Marking every decal Deleted here used to churn native render batches
+    /// during a save; repeated crashes followed when the camera moved immediately afterwards.
+    /// Filtering the snapshot leaves the live decals and their batches alone. The live MeshColor
+    /// stays weathered while saving; the inactive override is harmless in the save and is
+    /// re-enabled after the writer finishes. Runtime WeatheringState is not serializable.
     ///
     /// Two properties fall out of that which are worth having on purpose, not by luck:
     ///
@@ -35,6 +43,17 @@ namespace SeenBetterDays.Systems
     {
         private BuildingWeatheringSystem m_Weathering;
         private BuildingOverlayTestSystem m_OverlayTest;
+        private SerializerSystem m_Serializer;
+
+        // The game exposes no registration hook for excluding a mod-owned entity from its save
+        // query. Keep the reflection confined to this one field and method, and fail visibly if a
+        // game update changes either signature. The marker itself remains serializable so an
+        // older save containing stray decals can still be cleaned on load.
+        private static readonly FieldInfo SerializerQueryField = typeof(SerializerSystem).GetField(
+            "m_Query", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly MethodInfo CreateSerializerQueryMethod =
+            typeof(SerializerSystem).GetMethod(
+                "CreateQuery", BindingFlags.Instance | BindingFlags.NonPublic);
 
         [Preserve]
         protected override void OnCreate()
@@ -42,12 +61,13 @@ namespace SeenBetterDays.Systems
             base.OnCreate();
             m_Weathering = World.GetOrCreateSystemManaged<BuildingWeatheringSystem>();
             m_OverlayTest = World.GetOrCreateSystemManaged<BuildingOverlayTestSystem>();
+            m_Serializer = World.GetOrCreateSystemManaged<SerializerSystem>();
         }
 
         /// <summary>
         /// Runs through the game's pre-serialization contract, before the serializer creates its
-        /// entity table. Performing these structural changes as an ordinary system inside the
-        /// Serialize phase corrupted that table on the 13,824-building test city and produced a
+        /// entity table. Performing structural changes as an ordinary system inside the Serialize
+        /// phase corrupted that table on the 13,824-building test city and produced a
         /// NullReferenceException in EntitySerializer.CreateEntityTable.
         /// </summary>
         public void PreSerialize(Context context)
@@ -59,38 +79,171 @@ namespace SeenBetterDays.Systems
 
             Stopwatch stopwatch = Stopwatch.StartNew();
 
-            // PreSerialize is outside the normal system update chain. EntityManager completes the
-            // dependencies of each component we touch, but native rendering jobs may already have
-            // gathered the same buffers and decal batches. Changing them while such a job is still
-            // running can surface later as an access violation in Burst rather than as a managed
-            // exception here.
-            //
-            // Complete every tracked ECS job before making the save-time structural changes. This
-            // is deliberately one barrier per save, not one per building.
+            // PreSerialize is outside the normal system update chain. Complete tracked work before
+            // touching the colour buffers or replacing the serializer's entity query.
             EntityManager.CompleteAllTrackedJobs();
             double synchronizationMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
 
             int suspended = m_Weathering.SuspendForSave();
-            int strippedDecals = m_OverlayTest.SuspendDecalsForSave();
+            bool decalsExcluded = ExcludeDecalsFromSave();
+            int liveDecals = m_OverlayTest.ActiveDecalEntityCount;
 
-            // The mutations above are synchronous, but the render invalidation path may have
-            // registered fresh tracked work while the affected batches were marked dirty. Finish
-            // that work before the serializer creates its entity table from the changed world.
+            // Colour invalidation may register fresh work while the affected batches are marked
+            // dirty. Finish it before the serializer creates its entity table.
             EntityManager.CompleteAllTrackedJobs();
             stopwatch.Stop();
 
-            if (suspended > 0 || strippedDecals > 0)
+            if (!decalsExcluded && liveDecals > 0)
+            {
+                Mod.Log.Error("Seen Better Days: could not exclude " + liveDecals
+                              + " live decal entit(ies) from this save. They will be swept when "
+                              + "the city next loads with this mod; no render batches were "
+                              + "destroyed during serialization.");
+            }
+
+            if (suspended > 0 || liveDecals > 0)
             {
                 Mod.Log.Info("Seen Better Days: temporarily disabled " + suspended
-                           + " weathering colour override(s) and removed " + strippedDecals
-                           + " temporary decal entit(ies) in "
+                           + " weathering colour override(s) and "
+                           + (decalsExcluded ? "excluded " : "could not exclude ") + liveDecals
+                           + " live decal entit(ies) from the save query in "
                            + stopwatch.Elapsed.TotalMilliseconds.ToString("0.0")
                            + " ms before the serializer created its entity table ("
                            + synchronizationMilliseconds.ToString("0.0")
                            + " ms waiting for existing ECS jobs). "
                            + "Colour overrides are re-enabled after serialization without an ECS "
-                           + "component rebuild; developer decal samples stay cleared.");
+                           + "component rebuild; live decals are not removed for saving.");
             }
+        }
+
+        private bool ExcludeDecalsFromSave()
+        {
+            try
+            {
+                if (m_Serializer == null || SerializerQueryField == null
+                    || CreateSerializerQueryMethod == null)
+                {
+                    return false;
+                }
+
+                // SerializerSystem.OnUpdate normally refreshes its query when a component
+                // serializer is registered. Do that refresh here, before adding our exclusion,
+                // so its later update cannot replace the filtered query in the same save.
+                ComponentSerializerLibrary library = m_Serializer.componentLibrary;
+                if (library == null)
+                {
+                    return false;
+                }
+
+                if (library.isDirty)
+                {
+                    List<ComponentType> serializableTypes;
+                    library.Initialize(m_Serializer, out serializableTypes);
+                    CreateSerializerQueryMethod.Invoke(m_Serializer,
+                        new object[] { serializableTypes });
+                }
+
+                EntityQuery original = (EntityQuery)SerializerQueryField.GetValue(m_Serializer);
+                EntityQueryDesc[] originalDescs = original.GetEntityQueryDescs();
+                if (originalDescs == null || originalDescs.Length == 0)
+                {
+                    return false;
+                }
+
+                ComponentType marker = ComponentType.ReadOnly<WeatheringOverlay>();
+                EntityQueryDesc[] filteredDescs = new EntityQueryDesc[originalDescs.Length];
+                bool alreadyExcluded = true;
+
+                for (int i = 0; i < originalDescs.Length; i++)
+                {
+                    EntityQueryDesc source = originalDescs[i];
+                    ComponentType[] none = source.None ?? Array.Empty<ComponentType>();
+                    bool containsMarker = false;
+                    for (int j = 0; j < none.Length; j++)
+                    {
+                        if (none[j].TypeIndex == marker.TypeIndex)
+                        {
+                            containsMarker = true;
+                            break;
+                        }
+                    }
+
+                    if (containsMarker)
+                    {
+                        filteredDescs[i] = source;
+                        continue;
+                    }
+
+                    alreadyExcluded = false;
+                    ComponentType[] filteredNone = new ComponentType[none.Length + 1];
+                    Array.Copy(none, filteredNone, none.Length);
+                    filteredNone[none.Length] = marker;
+                    ComponentType[] filteredAny = WithoutType(source.Any, marker);
+                    if (source.Any != null && source.Any.Length > 0
+                        && filteredAny.Length == 0)
+                    {
+                        // An empty Any would broaden the serializer query to every entity.
+                        return false;
+                    }
+
+                    filteredDescs[i] = new EntityQueryDesc
+                    {
+                        All = WithoutType(source.All, marker),
+                        Any = filteredAny,
+                        None = filteredNone,
+                        Options = source.Options,
+                    };
+                }
+
+                EntityQuery saveQuery = original;
+                if (!alreadyExcluded)
+                {
+                    saveQuery = GetEntityQuery(filteredDescs);
+                    SerializerQueryField.SetValue(m_Serializer, saveQuery);
+                }
+
+                return m_OverlayTest.CountDecalsInQuery(saveQuery) == 0;
+            }
+            catch (Exception exception)
+            {
+                Mod.Log.Error("Seen Better Days: failed to filter decal entities from the save "
+                              + "query: " + exception);
+                return false;
+            }
+        }
+
+        private static ComponentType[] WithoutType(ComponentType[] types, ComponentType excluded)
+        {
+            if (types == null || types.Length == 0)
+            {
+                return types;
+            }
+
+            int kept = 0;
+            for (int i = 0; i < types.Length; i++)
+            {
+                if (types[i].TypeIndex != excluded.TypeIndex)
+                {
+                    kept++;
+                }
+            }
+
+            if (kept == types.Length)
+            {
+                return types;
+            }
+
+            ComponentType[] result = new ComponentType[kept];
+            int next = 0;
+            for (int i = 0; i < types.Length; i++)
+            {
+                if (types[i].TypeIndex != excluded.TypeIndex)
+                {
+                    result[next++] = types[i];
+                }
+            }
+
+            return result;
         }
 
         [Preserve]

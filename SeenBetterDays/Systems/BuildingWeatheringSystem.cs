@@ -1188,7 +1188,7 @@ namespace SeenBetterDays.Systems
         {
             BuildingOverlayTestSystem overlays =
                 World.GetExistingSystemManaged<BuildingOverlayTestSystem>();
-            int decals = overlays == null ? 0 : overlays.SuspendDecalsForSave();
+            int decals = overlays == null ? 0 : overlays.ClearDecalsForReset();
             int buildings = ResetAll();
 
             m_RangeKnown = false;
