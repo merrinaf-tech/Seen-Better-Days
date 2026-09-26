@@ -152,7 +152,10 @@ namespace SeenBetterDays.Rendering
             new KeyValuePair<string, OverlayFamily>("stain", OverlayFamily.Stain),
             new KeyValuePair<string, OverlayFamily>("leak", OverlayFamily.Stain),
             new KeyValuePair<string, OverlayFamily>("streak", OverlayFamily.Stain),
+            new KeyValuePair<string, OverlayFamily>("stucco", OverlayFamily.Crack),
+            new KeyValuePair<string, OverlayFamily>("plaster", OverlayFamily.Crack),
             new KeyValuePair<string, OverlayFamily>("dirt", OverlayFamily.Dirt),
+            new KeyValuePair<string, OverlayFamily>("mud", OverlayFamily.Dirt),
             new KeyValuePair<string, OverlayFamily>("dirty", OverlayFamily.Dirt),
             new KeyValuePair<string, OverlayFamily>("grime", OverlayFamily.Dirt),
             new KeyValuePair<string, OverlayFamily>("soot", OverlayFamily.Dirt),
@@ -201,7 +204,75 @@ namespace SeenBetterDays.Rendering
             new AutomaticSourceRule("Fallen leaves decals", OverlayFamily.Dirt, OverlayFamily.Dirt),
             new AutomaticSourceRule("G87 Trash Decals Dirty Pack", OverlayFamily.Dirt, OverlayFamily.Dirt),
             new AutomaticSourceRule("Street Art Decal Pack", OverlayFamily.Graffiti, OverlayFamily.Graffiti),
+
+            // A mixed pack. AutomaticFamily None keeps each asset's own named family, limited to
+            // AssetFamily: "G87 Moss 04" supplies Moss, "G87 Rust 12" Rust.
+            new AutomaticSourceRule("G87 Moss and Rust", OverlayFamily.Moss | OverlayFamily.Rust, OverlayFamily.None),
+
+            // The Urban Decay packs name their wall pieces only by number ("RZZirrah Urban Decay
+            // Decal 12"), so no keyword can sort them. They are listed one by one in
+            // s_UrbanDecayWall below, after looking at every icon.
+            new AutomaticSourceRule("Urban Decay Pack 1", OverlayFamily.All, OverlayFamily.None),
+            new AutomaticSourceRule("Urban Decay Pack 2", OverlayFamily.All, OverlayFamily.None),
         };
+
+        /// <summary>
+        /// The Urban Decay wall pieces worth putting on a building, by the number in their name,
+        /// with the stage they belong to. Chosen from the packs' own icons on 2026-09-27:
+        ///
+        /// - peeling plaster ("Damage Wall") and holes are heavy damage, so Stain, the late slot
+        ///   the road-repair patches already use;
+        /// - pipe leaks are Stain; moss is Moss;
+        /// - torn posters go with graffiti, which only the most neglected states draw.
+        ///
+        /// Left out: the two favela brick walls (3, 4) and the four rusty roofs (29-32), which are
+        /// whole-surface textures rather than marks, and the industrial hazard stripes (28). The
+        /// ground decals are named differently and never match.
+        /// </summary>
+        private static readonly Dictionary<int, OverlayFamily> s_UrbanDecayWall = new Dictionary<int, OverlayFamily>
+        {
+            { 1, OverlayFamily.Graffiti }, { 19, OverlayFamily.Graffiti }, { 23, OverlayFamily.Graffiti },
+            { 25, OverlayFamily.Graffiti },
+            { 5, OverlayFamily.Moss }, { 14, OverlayFamily.Moss }, { 17, OverlayFamily.Moss },
+            { 20, OverlayFamily.Stain }, { 21, OverlayFamily.Stain },
+            { 2, OverlayFamily.Stain }, { 6, OverlayFamily.Stain }, { 7, OverlayFamily.Stain },
+            { 8, OverlayFamily.Stain }, { 9, OverlayFamily.Stain }, { 10, OverlayFamily.Stain },
+            { 11, OverlayFamily.Stain }, { 12, OverlayFamily.Stain }, { 13, OverlayFamily.Stain },
+            { 15, OverlayFamily.Stain }, { 16, OverlayFamily.Stain }, { 18, OverlayFamily.Stain },
+            { 22, OverlayFamily.Stain }, { 24, OverlayFamily.Stain }, { 26, OverlayFamily.Stain },
+            { 27, OverlayFamily.Stain },
+        };
+
+        /// <summary>The family of an Urban Decay wall piece, or None if it is not on the list.</summary>
+        private static OverlayFamily UrbanDecayFamily(string name)
+        {
+            const string marker = "urban decay decal ";
+            int at = name.ToLowerInvariant().IndexOf(marker, StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return OverlayFamily.None;
+            }
+
+            int start = at + marker.Length;
+            int end = start;
+            while (end < name.Length && char.IsDigit(name[end]))
+            {
+                end++;
+            }
+
+            int number;
+            OverlayFamily family;
+            return end > start
+                && int.TryParse(name.Substring(start, end - start), out number)
+                && s_UrbanDecayWall.TryGetValue(number, out family)
+                ? family
+                : OverlayFamily.None;
+        }
+
+        /// <summary>How many automatic assets each whitelisted source supplied in the last
+        /// rebuild. A source at zero is either not installed or named differently from its rule,
+        /// and the catalogue line says which.</summary>
+        private readonly int[] m_SourceCounts = new int[s_ApprovedAutomaticSources.Length];
 
         /// <summary>
         /// Below this, in metres on its shortest edge, a decal is not weathering - it is a lane
@@ -472,6 +543,7 @@ namespace SeenBetterDays.Rendering
             m_All.Clear();
             m_BuildingCapable.Clear();
             m_AutoPool.Clear();
+            System.Array.Clear(m_SourceCounts, 0, m_SourceCounts.Length);
             m_ByPrefab.Clear();
             Largest = null;
             TotalObjectPrefabsScanned = 0;
@@ -499,11 +571,16 @@ namespace SeenBetterDays.Rendering
 
                     m_BuildingCapable.Add(info);
 
-                    info.AutomaticFamilies = ClassifyForAutomaticUse(info.Name, info.Families);
+                    int sourceIndex;
+                    info.AutomaticFamilies = ClassifyForAutomaticUse(info.Name, info.Families, out sourceIndex);
                     if (info.SmallestEdge >= MinAutoEdge
                         && info.AutomaticFamilies != OverlayFamily.None)
                     {
                         m_AutoPool.Add(info);
+                        if (sourceIndex >= 0)
+                        {
+                            m_SourceCounts[sourceIndex]++;
+                        }
                     }
 
                     if (Largest == null || info.Footprint > Largest.Footprint)
@@ -649,25 +726,71 @@ namespace SeenBetterDays.Rendering
         /// source. Requiring both an approved source and a matching asset name prevents a future
         /// mixed pack from contributing unrelated objects merely because its package is trusted.
         /// </summary>
-        private static OverlayFamily ClassifyForAutomaticUse(string name, OverlayFamily namedFamilies)
+        private static OverlayFamily ClassifyForAutomaticUse(string name, OverlayFamily namedFamilies, out int sourceIndex)
         {
-            if (string.IsNullOrEmpty(name) || namedFamilies == OverlayFamily.None)
+            sourceIndex = -1;
+            if (string.IsNullOrEmpty(name))
             {
                 return OverlayFamily.None;
             }
 
+            // Numbered packs first: their names carry no keyword for the check below.
+            string normalisedForNumbered = Normalise(name);
             for (int i = 0; i < s_ApprovedAutomaticSources.Length; i++)
             {
-                AutomaticSourceRule source = s_ApprovedAutomaticSources[i];
-                if (name.StartsWith(source.Prefix, StringComparison.OrdinalIgnoreCase))
+                AutomaticSourceRule numbered = s_ApprovedAutomaticSources[i];
+                if (numbered.Prefix.StartsWith("Urban Decay Pack", StringComparison.Ordinal)
+                    && normalisedForNumbered.StartsWith(Normalise(numbered.Prefix), StringComparison.Ordinal))
                 {
-                    return (namedFamilies & source.AssetFamily) != 0
-                        ? source.AutomaticFamily
-                        : OverlayFamily.None;
+                    sourceIndex = i;
+                    return UrbanDecayFamily(name);
                 }
             }
 
+            if (namedFamilies == OverlayFamily.None)
+            {
+                return OverlayFamily.None;
+            }
+
+            // Compared without case, spacing or punctuation, and with "&" read as "and": the
+            // listing calls a pack "Scribbles and Tags", its prefabs say "Scribbles & Tags", and
+            // "[G87] Moss and Rust" may reach us with or without the brackets.
+            string normalisedName = Normalise(name);
+            for (int i = 0; i < s_ApprovedAutomaticSources.Length; i++)
+            {
+                AutomaticSourceRule source = s_ApprovedAutomaticSources[i];
+                if (!normalisedName.StartsWith(Normalise(source.Prefix), StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                sourceIndex = i;
+                OverlayFamily allowed = namedFamilies & source.AssetFamily;
+                if (allowed == OverlayFamily.None)
+                {
+                    return OverlayFamily.None;
+                }
+
+                return source.AutomaticFamily == OverlayFamily.None ? allowed : source.AutomaticFamily;
+            }
+
             return OverlayFamily.None;
+        }
+
+        private static string Normalise(string text)
+        {
+            var sb = new StringBuilder(text.Length);
+            string lower = text.ToLowerInvariant().Replace("&", "and");
+            for (int i = 0; i < lower.Length; i++)
+            {
+                char c = lower[i];
+                if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+                {
+                    sb.Append(c);
+                }
+            }
+
+            return sb.ToString();
         }
 
         public bool HasAutomaticFamily(OverlayFamily family)
@@ -789,7 +912,7 @@ namespace SeenBetterDays.Rendering
 
                 AutomaticSourceRule source = s_ApprovedAutomaticSources[i];
                 sb.Append(source.Prefix);
-                if (source.AssetFamily != source.AutomaticFamily)
+                if (source.AutomaticFamily != OverlayFamily.None && source.AssetFamily != source.AutomaticFamily)
                 {
                     sb.Append(" [")
                       .Append(source.AssetFamily)
@@ -798,7 +921,12 @@ namespace SeenBetterDays.Rendering
 
                 sb
                   .Append(" -> ")
-                  .Append(source.AutomaticFamily);
+                  .Append(source.AutomaticFamily == OverlayFamily.None
+                      ? "own family (" + source.AssetFamily + ")"
+                      : source.AutomaticFamily.ToString())
+                  .Append(" (")
+                  .Append(m_SourceCounts[i])
+                  .Append(m_SourceCounts[i] == 0 ? " - not installed or not matched)" : ")");
             }
 
             if (Largest != null)

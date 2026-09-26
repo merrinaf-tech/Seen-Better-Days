@@ -33,8 +33,13 @@ optional; the colour layer works without any of them.
 | [G87] Road Repair: Patch Pack | [92004](https://mods.paradoxplaza.com/mods/92004/Windows) |
 | [G87] Trash Decals | [87720](https://mods.paradoxplaza.com/mods/87720/Windows) |
 | Fallen leaves decals | [96995](https://mods.paradoxplaza.com/mods/96995/Windows) |
+| [G87] Moss and Rust | [108303](https://mods.paradoxplaza.com/mods/108303/Windows) |
+| Urban Decay Pack 1 | [120305](https://mods.paradoxplaza.com/mods/120305/Windows) |
+| Urban Decay Pack 2 | [120500](https://mods.paradoxplaza.com/mods/120500/Windows) |
 
-The list lives in `SeenBetterDays/Rendering/DecalPrefabCatalog.cs`.
+From Moss and Rust, each piece supplies its own family. From the two Urban Decay packs only the
+wall pieces are used - peeling plaster, holes, leaks, moss and torn posters - listed by number,
+since their names carry no keyword; brick walls, rusty roofs and hazard stripes are left out. The list lives in `SeenBetterDays/Rendering/DecalPrefabCatalog.cs`.
 
 ## Options
 
