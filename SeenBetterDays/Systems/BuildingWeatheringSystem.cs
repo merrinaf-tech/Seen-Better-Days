@@ -70,6 +70,28 @@ namespace SeenBetterDays.Systems
         private float m_LandValueMedian;
         private float m_LandValueFloor;
         private float m_LandValueHighWater;
+
+        /// <summary>
+        /// The same three reference points, per zone type.
+        ///
+        /// Streets were first judged against the whole city, and industry sits on the cheapest
+        /// land by design: every new factory landed at the bottom of the city's range and started
+        /// 45% weathered. A factory is now compared with other factories, a shop with other shops.
+        /// A type with too few buildings to say what ordinary is falls back to the whole city.
+        /// </summary>
+        private struct LandValueStats
+        {
+            public float Median;
+            public float Floor;
+            public float HighWater;
+            public int Count;
+        }
+
+        /// <summary>Below this many buildings a type's own median is noise; use the city's.</summary>
+        private const int MinCategorySample = 12;
+
+        private readonly LandValueStats[] m_CategoryStats = new LandValueStats[6];
+        private float[][] m_CategoryScratch;
         private bool m_RangeKnown;
 
         /// <summary>Scratch for the median. Reused so a sweep does not allocate.</summary>
@@ -418,7 +440,7 @@ namespace SeenBetterDays.Systems
 
             float target = WeatheringTarget.Compute(
                 condition, abandonCost, spawnable.m_Level, efficiency, abandoned,
-                PovertyOf(building), WealthOf(building), SeedFor(building));
+                PovertyOf(building, category), WealthOf(building, category), SeedFor(building));
 
             WeatheringState state = EntityManager.HasComponent<WeatheringState>(building)
                 ? EntityManager.GetComponentData<WeatheringState>(building)
@@ -610,7 +632,7 @@ namespace SeenBetterDays.Systems
 
                     float target = WeatheringTarget.Compute(
                         condition, abandonCost, spawnable.m_Level, efficiency, abandoned,
-                PovertyOf(building), WealthOf(building), SeedFor(building));
+                PovertyOf(building, category), WealthOf(building, category), SeedFor(building));
 
                     string blocked;
                     if (!m_Renderer.CanWeather(building, out blocked))
@@ -668,7 +690,8 @@ namespace SeenBetterDays.Systems
                     bucket[0], bucket[1], bucket[2], bucket[3], bucket[4],
                     noColourChannels, submeshesDiffer, alreadyOverridden,
                     m_LandValueLow, m_LandValueHigh, m_LandValueMedian, m_LandValueFloor,
-                    m_LandValueHighWater, untouched, topLevel);
+                    m_LandValueHighWater, untouched, topLevel)
+                + DescribeCategoryMedians();
             }
             finally
             {
@@ -720,8 +743,12 @@ namespace SeenBetterDays.Systems
             int condition = EntityManager.GetComponentData<BuildingCondition>(building).m_Condition;
             bool abandoned = EntityManager.HasComponent<Abandoned>(building);
             float efficiency = EfficiencyOf(building);
-            float poverty = PovertyOf(building);
-            float wealth = WealthOf(building);
+            float poverty = PovertyOf(building, category);
+            float wealth = WealthOf(building, category);
+            LandValueStats reference = StatsFor(category);
+            string compared = reference.Count >= MinCategorySample
+                ? " for " + category.ToString().ToLowerInvariant()
+                : " citywide";
 
             float target = WeatheringTarget.Compute(
                 condition, abandonCost, spawnable.m_Level, efficiency, abandoned,
@@ -791,18 +818,18 @@ namespace SeenBetterDays.Systems
             }
             else if (wealth > 0.05f)
             {
-                street = string.Format("well-off street ({0:0} against a median of {1:0})",
-                                       landValue, m_LandValueMedian);
+                street = string.Format("well-off street ({0:0} against a median of {1:0}{2})",
+                                       landValue, reference.Median, compared);
             }
             else if (poverty > 0.05f)
             {
-                street = string.Format("below-median street ({0:0} against a median of {1:0})",
-                                       landValue, m_LandValueMedian);
+                street = string.Format("below-median street ({0:0} against a median of {1:0}{2})",
+                                       landValue, reference.Median, compared);
             }
             else
             {
-                street = string.Format("ordinary street ({0:0} against a median of {1:0})",
-                                       landValue, m_LandValueMedian);
+                street = string.Format("ordinary street ({0:0} against a median of {1:0}{2})",
+                                       landValue, reference.Median, compared);
             }
 
             string trouble = "";
@@ -885,9 +912,12 @@ namespace SeenBetterDays.Systems
         /// A city with no spread in land value gets no weathering from this term at all, which is
         /// the honest answer rather than an invented one.
         /// </summary>
-        private float PovertyOf(Entity building)
+        private float PovertyOf(Entity building, BuildingCategory category)
         {
-            if (!m_RangeKnown || m_LandValueFloor <= 1f || m_LandValueMedian <= m_LandValueFloor)
+            LandValueStats stats = StatsFor(category);
+            float median = stats.Median;
+            float floor = stats.Floor;
+            if (!m_RangeKnown || floor <= 1f || median <= floor)
             {
                 return 0f;
             }
@@ -912,7 +942,7 @@ namespace SeenBetterDays.Systems
             // median and floor spends most of its range on differences too small to mean anything;
             // a ratio-based one treats "half as valuable as ordinary" the same way wherever in the
             // city it happens.
-            float span = math.log(m_LandValueMedian) - math.log(m_LandValueFloor);
+            float span = math.log(median) - math.log(floor);
 
             // How much genuine inequality there is *below* the median - the only part of the
             // distribution this term reads. A city whose ordinary street is barely better off than
@@ -920,8 +950,8 @@ namespace SeenBetterDays.Systems
             // the honest answer: no spread to read, no weathering invented from it.
             float inequality = math.saturate(span / math.log(1.5f));
 
-            float clamped = math.clamp(value, m_LandValueFloor, m_LandValueMedian);
-            float position = (math.log(m_LandValueMedian) - math.log(clamped)) / span;
+            float clamped = math.clamp(value, floor, median);
+            float position = (math.log(median) - math.log(clamped)) / span;
 
             return math.saturate(position * inequality);
         }
@@ -934,9 +964,12 @@ namespace SeenBetterDays.Systems
         /// median and spread out above it, so this is the half of the distribution with something
         /// to say - see <see cref="PovertyOf"/> for the half that has not.
         /// </summary>
-        private float WealthOf(Entity building)
+        private float WealthOf(Entity building, BuildingCategory category)
         {
-            if (!m_RangeKnown || m_LandValueMedian <= 1f || m_LandValueHighWater <= m_LandValueMedian)
+            LandValueStats stats = StatsFor(category);
+            float median = stats.Median;
+            float highWater = stats.HighWater;
+            if (!m_RangeKnown || median <= 1f || highWater <= median)
             {
                 return 0f;
             }
@@ -949,10 +982,54 @@ namespace SeenBetterDays.Systems
 
             // Logarithmic for the same reason as below the median: land value is a ratio, and
             // twice as valuable should mean the same thing at either end of the city.
-            float span = math.log(m_LandValueHighWater) - math.log(m_LandValueMedian);
-            float clamped = math.clamp(value, m_LandValueMedian, m_LandValueHighWater);
+            float span = math.log(highWater) - math.log(median);
+            float clamped = math.clamp(value, median, highWater);
 
-            return math.saturate((math.log(clamped) - math.log(m_LandValueMedian)) / span);
+            return math.saturate((math.log(clamped) - math.log(median)) / span);
+        }
+
+        /// <summary>
+        /// The reference a building of this type is judged against: its own type's when there are
+        /// enough of them to say what ordinary is, the whole city's otherwise.
+        /// </summary>
+        /// <summary>For the census: what each zone type is judged against.</summary>
+        private string DescribeCategoryMedians()
+        {
+            var sb = new System.Text.StringBuilder(" | medians by type:");
+            foreach (BuildingCategory category in new[] { BuildingCategory.Residential, BuildingCategory.Commercial,
+                                                          BuildingCategory.Industrial, BuildingCategory.Office })
+            {
+                LandValueStats stats = m_CategoryStats[(int)category];
+                sb.Append(' ').Append(category.ToString().ToLowerInvariant()).Append(' ');
+                if (stats.Count >= MinCategorySample)
+                {
+                    sb.Append(stats.Median.ToString("0")).Append(" (").Append(stats.Count).Append(')');
+                }
+                else
+                {
+                    sb.Append("citywide (").Append(stats.Count).Append(')');
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private LandValueStats StatsFor(BuildingCategory category)
+        {
+            int index = (int)category;
+            if (index >= 0 && index < m_CategoryStats.Length
+                && m_CategoryStats[index].Count >= MinCategorySample)
+            {
+                return m_CategoryStats[index];
+            }
+
+            return new LandValueStats
+            {
+                Median = m_LandValueMedian,
+                Floor = m_LandValueFloor,
+                HighWater = m_LandValueHighWater,
+                Count = 0,
+            };
         }
 
         private void MeasureLandValueRange(NativeArray<Entity> buildings)
@@ -962,6 +1039,17 @@ namespace SeenBetterDays.Systems
                 m_LandValueScratch = new float[math.max(64, buildings.Length)];
             }
 
+            if (m_CategoryScratch == null || m_CategoryScratch[0].Length < buildings.Length)
+            {
+                m_CategoryScratch = new float[m_CategoryStats.Length][];
+                for (int c = 0; c < m_CategoryScratch.Length; c++)
+                {
+                    m_CategoryScratch[c] = new float[math.max(64, buildings.Length)];
+                }
+            }
+
+            var perCategory = new int[m_CategoryStats.Length];
+
             int found = 0;
             for (int i = 0; i < buildings.Length; i++)
             {
@@ -969,7 +1057,36 @@ namespace SeenBetterDays.Systems
                 if (value >= 0f)
                 {
                     m_LandValueScratch[found++] = value;
+
+                    string ignoredReason;
+                    Entity ignoredPrefab;
+                    int ignoredLevel;
+                    int category = (int)BuildingClassifier.Classify(
+                        EntityManager, buildings[i], out ignoredPrefab, out ignoredLevel, out ignoredReason);
+                    if (category >= 0 && category < perCategory.Length)
+                    {
+                        m_CategoryScratch[category][perCategory[category]++] = value;
+                    }
                 }
+            }
+
+            for (int c = 0; c < m_CategoryStats.Length; c++)
+            {
+                int n = perCategory[c];
+                if (n == 0)
+                {
+                    m_CategoryStats[c] = default;
+                    continue;
+                }
+
+                System.Array.Sort(m_CategoryScratch[c], 0, n);
+                m_CategoryStats[c] = new LandValueStats
+                {
+                    Median = m_CategoryScratch[c][n / 2],
+                    Floor = m_CategoryScratch[c][n / 10],
+                    HighWater = m_CategoryScratch[c][(n * 9) / 10],
+                    Count = n,
+                };
             }
 
             if (found == 0)

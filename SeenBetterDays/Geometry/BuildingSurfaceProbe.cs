@@ -200,131 +200,190 @@ namespace SeenBetterDays.Geometry
                 return 0;
             }
 
-            Entity prefab = entityManager.GetComponentData<PrefabRef>(building).m_Prefab;
-            if (!entityManager.HasBuffer<SubMesh>(prefab))
-            {
-                return 0;
-            }
-
-            float3 geometryCenter = default;
-            if (entityManager.HasComponent<ObjectGeometryData>(prefab))
-            {
-                ObjectGeometryData geometry = entityManager.GetComponentData<ObjectGeometryData>(prefab);
-                geometryCenter = (geometry.m_Bounds.min + geometry.m_Bounds.max) * 0.5f;
-            }
-
-            // Do not let submesh order spend the whole sample budget on the first wall it happens
-            // to contain. Detailed row houses can exceed the cap before their street facade is
-            // reached, which left only the two gable ends in the cache. Reserve an equal share for
-            // every local side and keep walking the mesh after one side is full.
-            int pointsPerSide = math.max(1, limit / 4);
-            int acceptedLimit = pointsPerSide * 4;
-            int[] sideCounts = new int[4];
-            DynamicBuffer<SubMesh> subMeshes = entityManager.GetBuffer<SubMesh>(prefab, true);
-
-            for (int i = 0; i < subMeshes.Length && into.Count < acceptedLimit; i++)
-            {
-                SubMesh subMesh = subMeshes[i];
-                Entity mesh = subMesh.m_SubMesh;
-
-                if (!entityManager.HasBuffer<MeshVertex>(mesh) || !entityManager.HasBuffer<MeshIndex>(mesh))
-                {
-                    continue;
-                }
-
-                DynamicBuffer<MeshVertex> vertices = entityManager.GetBuffer<MeshVertex>(mesh, true);
-                DynamicBuffer<MeshIndex> indices = entityManager.GetBuffer<MeshIndex>(mesh, true);
-
-                bool hasOwnTransform = (subMesh.m_Flags & (SubMeshFlags.HasTransform
-                                                         | SubMeshFlags.IsStackStart
-                                                         | SubMeshFlags.IsStackMiddle
-                                                         | SubMeshFlags.IsStackEnd)) != 0;
-
-                int triangles = indices.Length / 3;
-                for (int t = 0; t < triangles && into.Count < acceptedLimit; t++)
-                {
-                    int i0 = indices[t * 3].m_Index;
-                    int i1 = indices[t * 3 + 1].m_Index;
-                    int i2 = indices[t * 3 + 2].m_Index;
-
-                    if (i0 < 0 || i1 < 0 || i2 < 0
-                        || i0 >= vertices.Length || i1 >= vertices.Length || i2 >= vertices.Length)
-                    {
-                        continue;
-                    }
-
-                    float3 a = vertices[i0].m_Vertex;
-                    float3 b = vertices[i1].m_Vertex;
-                    float3 c = vertices[i2].m_Vertex;
-
-                    if (hasOwnTransform)
-                    {
-                        a = math.mul(subMesh.m_Rotation, a) + subMesh.m_Position;
-                        b = math.mul(subMesh.m_Rotation, b) + subMesh.m_Position;
-                        c = math.mul(subMesh.m_Rotation, c) + subMesh.m_Position;
-                    }
-
-                    float3 cross = math.cross(b - a, c - a);
-                    float twiceArea = math.length(cross);
-
-                    // A quarter of a square metre. Smaller than this is window frames and
-                    // mouldings, where a decal reads as a mistake rather than as dirt.
-                    if (twiceArea < 0.5f)
-                    {
-                        continue;
-                    }
-
-                    float3 normal = cross / twiceArea;
-                    if (math.abs(normal.y) > 0.35f)
-                    {
-                        continue;
-                    }
-
-                    float3 position = (a + b + c) / 3f;
-
-                    // Mesh winding is not consistent across custom assets. Orient the cached
-                    // normal away from the prefab centre so both sides can pass the renderer's
-                    // facing test instead of one direction disappearing solely because its
-                    // triangles were wound the other way round.
-                    float3 fromCenter = position - geometryCenter;
-                    fromCenter.y = 0f;
-                    if (math.dot(normal, fromCenter) < 0f)
-                    {
-                        normal = -normal;
-                    }
-
-                    int side;
-                    if (math.abs(normal.z) >= math.abs(normal.x))
-                    {
-                        side = normal.z >= 0f
-                            ? (int)FacadeSide.Front
-                            : (int)FacadeSide.Back;
-                    }
-                    else
-                    {
-                        side = normal.x >= 0f
-                            ? (int)FacadeSide.Right
-                            : (int)FacadeSide.Left;
-                    }
-
-                    if (sideCounts[side] >= pointsPerSide)
-                    {
-                        continue;
-                    }
-
-                    sideCounts[side]++;
-
-                    into.Add(new SurfacePoint
-                    {
-                        m_Position = position,
-                        m_Normal = normal,
-                        m_Area = twiceArea * 0.5f,
-                        m_Side = (FacadeSide)side,
-                    });
-                }
-            }
-
+            var surveyor = new FacadeSurveyor(
+                entityManager, entityManager.GetComponentData<PrefabRef>(building).m_Prefab, limit);
+            surveyor.Step(entityManager, double.PositiveInfinity);
+            into.AddRange(surveyor.Points);
             return into.Count;
+        }
+
+        /// <summary>
+        /// <see cref="CollectLocalFacadePoints"/> as work that can stop and resume.
+        ///
+        /// Walking a detailed prefab's triangles on the main thread took up to 60 ms in one go -
+        /// a visible hitch every time the camera reached a building type it had not seen yet. The
+        /// walk is identical; it just keeps its place (submesh, triangle) between calls, so it can
+        /// be spread over frames under a time budget. Buffers are fetched again on every call: a
+        /// DynamicBuffer handle does not survive the structural changes other systems make between
+        /// frames.
+        /// </summary>
+        public sealed class FacadeSurveyor
+        {
+            /// <summary>Triangles between clock checks: reading the clock per triangle costs more
+            /// than the triangle.</summary>
+            private const int TrianglesPerCheck = 128;
+
+            public readonly Entity Prefab;
+            public readonly List<SurfacePoint> Points = new List<SurfacePoint>(2048);
+
+            private readonly float3 m_Center;
+            private readonly int m_PointsPerSide;
+            private readonly int m_AcceptedLimit;
+            private readonly int[] m_SideCounts = new int[4];
+            private int m_SubMesh;
+            private int m_Triangle;
+
+            public bool Done { get; private set; }
+
+            public FacadeSurveyor(EntityManager entityManager, Entity prefab, int limit = 6000)
+            {
+                Prefab = prefab;
+                if (entityManager.HasComponent<ObjectGeometryData>(prefab))
+                {
+                    ObjectGeometryData geometry = entityManager.GetComponentData<ObjectGeometryData>(prefab);
+                    m_Center = (geometry.m_Bounds.min + geometry.m_Bounds.max) * 0.5f;
+                }
+
+                // Do not let submesh order spend the whole sample budget on the first wall it
+                // happens to contain. Detailed row houses can exceed the cap before their street
+                // facade is reached, which left only the two gable ends in the cache. Reserve an
+                // equal share for every local side and keep walking after one side is full.
+                m_PointsPerSide = math.max(1, limit / 4);
+                m_AcceptedLimit = m_PointsPerSide * 4;
+                Done = !entityManager.HasBuffer<SubMesh>(prefab);
+            }
+
+            /// <summary>Walks triangles until done or until <paramref name="budgetMs"/> has been
+            /// spent. Returns true when the survey is complete.</summary>
+            public bool Step(EntityManager entityManager, double budgetMs)
+            {
+                if (Done)
+                {
+                    return true;
+                }
+
+                if (!entityManager.Exists(Prefab) || !entityManager.HasBuffer<SubMesh>(Prefab))
+                {
+                    Done = true;
+                    return true;
+                }
+
+                long started = System.Diagnostics.Stopwatch.GetTimestamp();
+                double ticksPerMs = System.Diagnostics.Stopwatch.Frequency / 1000d;
+                DynamicBuffer<SubMesh> subMeshes = entityManager.GetBuffer<SubMesh>(Prefab, true);
+                int sinceCheck = 0;
+
+                for (; m_SubMesh < subMeshes.Length && Points.Count < m_AcceptedLimit; m_SubMesh++, m_Triangle = 0)
+                {
+                    SubMesh subMesh = subMeshes[m_SubMesh];
+                    Entity mesh = subMesh.m_SubMesh;
+
+                    if (!entityManager.HasBuffer<MeshVertex>(mesh) || !entityManager.HasBuffer<MeshIndex>(mesh))
+                    {
+                        continue;
+                    }
+
+                    DynamicBuffer<MeshVertex> vertices = entityManager.GetBuffer<MeshVertex>(mesh, true);
+                    DynamicBuffer<MeshIndex> indices = entityManager.GetBuffer<MeshIndex>(mesh, true);
+
+                    bool hasOwnTransform = (subMesh.m_Flags & (SubMeshFlags.HasTransform
+                                                             | SubMeshFlags.IsStackStart
+                                                             | SubMeshFlags.IsStackMiddle
+                                                             | SubMeshFlags.IsStackEnd)) != 0;
+
+                    int triangles = indices.Length / 3;
+                    for (; m_Triangle < triangles && Points.Count < m_AcceptedLimit; m_Triangle++)
+                    {
+                        if (++sinceCheck >= TrianglesPerCheck)
+                        {
+                            sinceCheck = 0;
+                            if ((System.Diagnostics.Stopwatch.GetTimestamp() - started) / ticksPerMs >= budgetMs)
+                            {
+                                return false;
+                            }
+                        }
+
+                        int t = m_Triangle;
+                        int i0 = indices[t * 3].m_Index;
+                        int i1 = indices[t * 3 + 1].m_Index;
+                        int i2 = indices[t * 3 + 2].m_Index;
+
+                        if (i0 < 0 || i1 < 0 || i2 < 0
+                            || i0 >= vertices.Length || i1 >= vertices.Length || i2 >= vertices.Length)
+                        {
+                            continue;
+                        }
+
+                        float3 a = vertices[i0].m_Vertex;
+                        float3 b = vertices[i1].m_Vertex;
+                        float3 c = vertices[i2].m_Vertex;
+
+                        if (hasOwnTransform)
+                        {
+                            a = math.mul(subMesh.m_Rotation, a) + subMesh.m_Position;
+                            b = math.mul(subMesh.m_Rotation, b) + subMesh.m_Position;
+                            c = math.mul(subMesh.m_Rotation, c) + subMesh.m_Position;
+                        }
+
+                        float3 cross = math.cross(b - a, c - a);
+                        float twiceArea = math.length(cross);
+
+                        // A quarter of a square metre. Smaller than this is window frames and
+                        // mouldings, where a decal reads as a mistake rather than as dirt.
+                        if (twiceArea < 0.5f)
+                        {
+                            continue;
+                        }
+
+                        float3 normal = cross / twiceArea;
+                        if (math.abs(normal.y) > 0.35f)
+                        {
+                            continue;
+                        }
+
+                        float3 position = (a + b + c) / 3f;
+
+                        // Mesh winding is not consistent across custom assets. Orient the cached
+                        // normal away from the prefab centre so both sides can pass the renderer's
+                        // facing test instead of one direction disappearing solely because its
+                        // triangles were wound the other way round.
+                        float3 fromCenter = position - m_Center;
+                        fromCenter.y = 0f;
+                        if (math.dot(normal, fromCenter) < 0f)
+                        {
+                            normal = -normal;
+                        }
+
+                        int side;
+                        if (math.abs(normal.z) >= math.abs(normal.x))
+                        {
+                            side = normal.z >= 0f ? (int)FacadeSide.Front : (int)FacadeSide.Back;
+                        }
+                        else
+                        {
+                            side = normal.x >= 0f ? (int)FacadeSide.Right : (int)FacadeSide.Left;
+                        }
+
+                        if (m_SideCounts[side] >= m_PointsPerSide)
+                        {
+                            continue;
+                        }
+
+                        m_SideCounts[side]++;
+
+                        Points.Add(new SurfacePoint
+                        {
+                            m_Position = position,
+                            m_Normal = normal,
+                            m_Area = twiceArea * 0.5f,
+                            m_Side = (FacadeSide)side,
+                        });
+                    }
+                }
+
+                Done = true;
+                return true;
+            }
         }
 
         /// <summary>

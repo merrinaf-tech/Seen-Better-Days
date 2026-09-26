@@ -99,6 +99,7 @@ namespace SeenBetterDays.Systems
         private int m_Ineligible;
         private int m_ApplyFailed;
         private int m_SuppressedRetries;
+        private int m_AwaitingSurvey;
         private string m_LastApplyFailure;
         private int m_Passes;
         private int m_TimedPasses;
@@ -301,7 +302,9 @@ namespace SeenBetterDays.Systems
                            + m_MeshNotReady + " whose mesh is not loaded yet, "
                            + m_NoWeatheringState + " awaiting a weathering state, "
                            + m_Ineligible + " ineligible, "
-                           + m_ApplyFailed + " placement failure(s)"
+                           + m_ApplyFailed + " placement failure(s), "
+                           + m_AwaitingSurvey + " waiting for a wall survey ("
+                           + renderer.PendingSurveys + " building type(s) queued)"
                            + ", " + m_SuppressedRetries
                            + " unchanged failed plan(s) skipped"
                            + (string.IsNullOrEmpty(m_LastApplyFailure)
@@ -325,6 +328,7 @@ namespace SeenBetterDays.Systems
                 m_Ineligible = 0;
                 m_ApplyFailed = 0;
                 m_SuppressedRetries = 0;
+                m_AwaitingSurvey = 0;
                 m_LastApplyFailure = null;
                 m_TimedPasses = 0;
                 m_WorkMilliseconds = 0d;
@@ -482,6 +486,16 @@ namespace SeenBetterDays.Systems
                 }
 
                 m_RejectedPlacements.Remove(building);
+            }
+
+            // The first building of a type needs its walls surveyed, which is the expensive part.
+            // Ask for it and move on; FacadeSurveySystem does it in small slices, and this
+            // building is detailed on a later pass. Not an attempt, and not a failure.
+            if (automaticPlacement && !renderer.HasSurfaceTemplate(building))
+            {
+                renderer.RequestSurfaceTemplate(building);
+                m_AwaitingSurvey++;
+                return false;
             }
 
             int placed;

@@ -86,6 +86,7 @@ namespace SeenBetterDays
             // and needs the renderer to pick them up in the frame it writes them.
             updateSystem.UpdateBefore<BuildingWeatheringSystem>(SystemUpdatePhase.ModificationEnd);
             updateSystem.UpdateBefore<DecalDetailSystem>(SystemUpdatePhase.ModificationEnd);
+            updateSystem.UpdateBefore<FacadeSurveySystem>(SystemUpdatePhase.ModificationEnd);
 
             // Weathering overlays are implementation details, not player-authored props. Let the
             // tool finish its raycast, then redirect an overlay selection to its owning building.

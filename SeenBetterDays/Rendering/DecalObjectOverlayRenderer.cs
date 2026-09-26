@@ -372,12 +372,28 @@ namespace SeenBetterDays.Rendering
                 return;
             }
 
+            // Only the manual and developer paths get here without a template: the proximity
+            // system waits for the budgeted survey below instead. They are one building at a time
+            // and on request, so a synchronous walk is acceptable there.
             var collected = new List<BuildingSurfaceProbe.SurfacePoint>(2048);
             BuildingSurfaceProbe.CollectLocalFacadePoints(
                 m_EntityManager,
                 building,
                 collected);
 
+            m_SurfaceBySide = StoreTemplate(prefab, collected);
+            m_SurfaceTemplateCacheHit = false;
+        }
+
+        /// <summary>
+        /// Groups surveyed wall points by side and remembers them for the prefab.
+        ///
+        /// An empty result often means the game's mesh buffers have not become resident yet, so it
+        /// is returned but not remembered: a later pass must be allowed to try again.
+        /// </summary>
+        private List<BuildingSurfaceProbe.SurfacePoint>[] StoreTemplate(
+            Entity prefab, List<BuildingSurfaceProbe.SurfacePoint> collected)
+        {
             var partitioned = new List<BuildingSurfaceProbe.SurfacePoint>[4];
             for (int side = 0; side < partitioned.Length; side++)
             {
@@ -391,14 +407,9 @@ namespace SeenBetterDays.Rendering
                 partitioned[(int)point.m_Side].Add(point);
             }
 
-            m_SurfaceBySide = partitioned;
-            m_SurfaceTemplateCacheHit = false;
-
-            // An empty result often means the game's mesh buffers have not become resident yet.
-            // Do not remember it: a later pass must be allowed to try again.
             if (collected.Count == 0)
             {
-                return;
+                return partitioned;
             }
 
             if (m_CachedSurfacePointCount + collected.Count > MaxCachedSurfacePoints)
@@ -409,6 +420,96 @@ namespace SeenBetterDays.Rendering
 
             m_SurfaceTemplates[prefab] = partitioned;
             m_CachedSurfacePointCount += collected.Count;
+            return partitioned;
+        }
+
+        // ---- Budgeted wall surveys ---------------------------------------------------------------
+        //
+        // The first time a building type is met, its triangles have to be walked to find its walls.
+        // For a detailed prefab that took up to 60 ms on the main thread in one go - the hitch a
+        // player saw while moving the camera into a new district. The proximity system now asks
+        // for a survey and moves on; FacadeSurveySystem spends a small slice of every frame on the
+        // queue, and the building is detailed on a later pass once its type is known.
+
+        // A List used as a queue: Queue<T> is ambiguous between the game's mscorlib and System
+        // references, and this holds a few dozen building types at most.
+        private readonly List<Entity> m_SurveyQueue = new List<Entity>();
+        private readonly HashSet<Entity> m_SurveyQueued = new HashSet<Entity>();
+        private BuildingSurfaceProbe.FacadeSurveyor m_Survey;
+
+        /// <summary>Whether this building's type has already been surveyed.</summary>
+        public bool HasSurfaceTemplate(Entity building)
+        {
+            return m_EntityManager.HasComponent<PrefabRef>(building)
+                && m_SurfaceTemplates.ContainsKey(m_EntityManager.GetComponentData<PrefabRef>(building).m_Prefab);
+        }
+
+        /// <summary>Queues a survey of this building's type, once.</summary>
+        public void RequestSurfaceTemplate(Entity building)
+        {
+            if (!m_EntityManager.HasComponent<PrefabRef>(building))
+            {
+                return;
+            }
+
+            Entity prefab = m_EntityManager.GetComponentData<PrefabRef>(building).m_Prefab;
+            if (m_SurfaceTemplates.ContainsKey(prefab) || !m_SurveyQueued.Add(prefab))
+            {
+                return;
+            }
+
+            m_SurveyQueue.Add(prefab);
+        }
+
+        /// <summary>Building types waiting for, or in the middle of, a survey.</summary>
+        public int PendingSurveys
+        {
+            get { return m_SurveyQueue.Count + (m_Survey != null ? 1 : 0); }
+        }
+
+        /// <summary>Works on the survey queue for at most <paramref name="budgetMs"/>.</summary>
+        public void AdvanceSurveys(double budgetMs)
+        {
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            double ticksPerMs = System.Diagnostics.Stopwatch.Frequency / 1000d;
+
+            while (true)
+            {
+                double left = budgetMs - (System.Diagnostics.Stopwatch.GetTimestamp() - started) / ticksPerMs;
+                if (left <= 0d)
+                {
+                    return;
+                }
+
+                if (m_Survey == null)
+                {
+                    if (m_SurveyQueue.Count == 0)
+                    {
+                        return;
+                    }
+
+                    Entity next = m_SurveyQueue[0];
+                    m_SurveyQueue.RemoveAt(0);
+                    if (m_SurfaceTemplates.ContainsKey(next))
+                    {
+                        m_SurveyQueued.Remove(next);
+                        continue;
+                    }
+
+                    m_Survey = new BuildingSurfaceProbe.FacadeSurveyor(m_EntityManager, next);
+                }
+
+                if (!m_Survey.Step(m_EntityManager, left))
+                {
+                    return;
+                }
+
+                // An empty survey is not remembered, and taking the prefab out of the queued set
+                // lets the proximity system ask again once the mesh is resident.
+                StoreTemplate(m_Survey.Prefab, m_Survey.Points);
+                m_SurveyQueued.Remove(m_Survey.Prefab);
+                m_Survey = null;
+            }
         }
 
         /// <summary>Which families the last plan actually used, so "is it even placing graffiti?"
