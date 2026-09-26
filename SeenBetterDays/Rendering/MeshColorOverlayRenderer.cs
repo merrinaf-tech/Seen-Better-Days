@@ -572,6 +572,18 @@ namespace SeenBetterDays.Rendering
         /// The seed adds a last few percent of variation, which is what stops a street of identical
         /// prefabs in identical condition from reading as a repeat.
         /// </summary>
+        /// <summary>
+        /// How much a weathering value (already scaled by the intensity setting) takes out of a
+        /// building's colours: the light factor kept, and the share of saturation removed. Shared
+        /// by the renderer and the tooltip, so the tooltip reports exactly what is drawn.
+        /// </summary>
+        public static void ColourAmounts(float weathering, out float darkness, out float desaturation)
+        {
+            float colourWeathering = weathering * weathering;
+            darkness = 1f - colourWeathering * 0.25f;
+            desaturation = Response == WeatheringResponse.DarknessOnly ? 0f : colourWeathering * 0.35f;
+        }
+
         private static ColorSet Weather(ColorSet basis, in BuildingVisualProfile profile)
         {
             // The player's intensity setting scales what is drawn and nothing else. A building's
@@ -594,12 +606,9 @@ namespace SeenBetterDays.Rendering
             // separation in the dark end of the scale to distinguish levels 3, 4 and 5.
             // No random jitter here: the original instance colours already provide variation,
             // while jitter can make adjacent test states appear out of order.
-            float colourWeathering = weathering * weathering;
-            float darkness = 1f - colourWeathering * 0.25f;
-
-            float desaturation = Response == WeatheringResponse.DarknessOnly
-                ? 0f
-                : colourWeathering * 0.35f;
+            float darkness;
+            float desaturation;
+            ColourAmounts(weathering, out darkness, out desaturation);
 
             // Tint multiplicatively, centred on 1, so it bends the hue without changing how
             // bright the surface is.

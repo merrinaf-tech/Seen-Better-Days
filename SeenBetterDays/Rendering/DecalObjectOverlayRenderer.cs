@@ -1854,6 +1854,54 @@ namespace SeenBetterDays.Rendering
         /// Read this a frame or more after applying. CullingInfo is filled in by the game's own
         /// systems, so straight after the command buffer plays back it is still all zeroes.
         /// </summary>
+        /// <summary>
+        /// The marks currently on a building, as a total and a per-family breakdown ("Crack 4,
+        /// Stain 2"). Read from the live overlay entities, so it is what is drawn, not what was
+        /// planned. False when the building has none.
+        /// </summary>
+        public bool TryCountPlaced(Entity building, out int total, out string families)
+        {
+            total = 0;
+            families = null;
+
+            OverlayRecord record;
+            if (!m_Records.TryGetValue(building, out record) || record.Elements.Count == 0)
+            {
+                return false;
+            }
+
+            var counts = new Dictionary<OverlayFamily, int>();
+            for (int i = 0; i < record.Elements.Count; i++)
+            {
+                Entity element = record.Elements[i];
+                if (!m_EntityManager.Exists(element) || !m_EntityManager.HasComponent<WeatheringOverlay>(element))
+                {
+                    continue;
+                }
+
+                var family = (OverlayFamily)m_EntityManager.GetComponentData<WeatheringOverlay>(element).m_Family;
+                int n;
+                counts.TryGetValue(family, out n);
+                counts[family] = n + 1;
+                total++;
+            }
+
+            if (total == 0)
+            {
+                return false;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            foreach (var pair in counts)
+            {
+                if (sb.Length > 0) sb.Append(", ");
+                sb.Append(pair.Key).Append(' ').Append(pair.Value);
+            }
+
+            families = sb.ToString();
+            return true;
+        }
+
         public string DescribeElements(Entity building)
         {
             OverlayRecord record;

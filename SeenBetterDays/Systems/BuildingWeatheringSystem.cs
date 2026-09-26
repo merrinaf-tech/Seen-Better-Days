@@ -732,7 +732,56 @@ namespace SeenBetterDays.Systems
                 ? EntityManager.GetComponentData<WeatheringState>(building).m_Weathering
                 : 0f;
 
-            string state = BuildingVisualProfile.StateFor(shown).ToString();
+            VisualState visual = BuildingVisualProfile.StateFor(shown);
+            string state = string.Format("{0} ({1} of 5)", visual, (int)visual + 1);
+
+            // What the mod is actually doing to this building. The game's level used to be
+            // printed here instead; it is on the building's own panel, and it only feeds the
+            // weathering - the state is what decides the colour and the marks.
+            float scale = Mod.Settings != null ? Mod.Settings.IntensityScale : 1f;
+            float darkness;
+            float desaturation;
+            MeshColorOverlayRenderer.ColourAmounts(math.saturate(shown * scale), out darkness, out desaturation);
+            string colour = shown <= 0.005f
+                ? "colour: untouched"
+                : string.Format("colour: {0:0}% darker, {1:0}% greyer",
+                                (1f - darkness) * 100f, desaturation * 100f);
+
+            string decals;
+            BuildingOverlayTestSystem overlays = World.GetExistingSystemManaged<BuildingOverlayTestSystem>();
+            DecalObjectOverlayRenderer decalRenderer = overlays != null ? overlays.DecalRenderer : null;
+            int placed;
+            string placedFamilies;
+            if (Mod.Settings != null && !Mod.Settings.EnableDecalDetail)
+            {
+                decals = "decals: off in the options";
+            }
+            else if (decalRenderer != null && decalRenderer.TryCountPlaced(building, out placed, out placedFamilies))
+            {
+                decals = string.Format("decals: {0} - {1}", placed, placedFamilies);
+            }
+            else if (visual == VisualState.Maintained)
+            {
+                decals = "decals: none at Maintained";
+            }
+            else
+            {
+                BuildingVisualProfile planned = BuildingVisualProfile.FromWeathering(category, shown, SeedFor(building));
+                var wanted = new System.Text.StringBuilder();
+                foreach (OverlayFamily family in new[] { OverlayFamily.Dirt, OverlayFamily.Stain, OverlayFamily.Crack,
+                                                         OverlayFamily.Moss, OverlayFamily.Rust, OverlayFamily.Graffiti })
+                {
+                    if (planned.GetIntensity(family) > 0.01f)
+                    {
+                        if (wanted.Length > 0) wanted.Append(", ");
+                        wanted.Append(family);
+                    }
+                }
+
+                decals = wanted.Length > 0
+                    ? "decals: none yet - " + wanted + " within 200 m, from installed packs"
+                    : "decals: none at this state";
+            }
 
             string street;
             float landValue = LandValueOf(building);
@@ -785,8 +834,8 @@ namespace SeenBetterDays.Systems
                     BuildingVisualProfile.StateFor(target), target * 100f);
             }
 
-            text = string.Format("{0} - {1:0}% weathered{2}\nlevel {3}, {4}{5}{6}",
-                                 state, shown * 100f, hold, spawnable.m_Level,
+            text = string.Format("{0} - {1:0}% weathered{2}\n{3}\n{4}\n{5}{6}{7}",
+                                 state, shown * 100f, hold, colour, decals,
                                  street, trouble, trajectory);
             return true;
         }
