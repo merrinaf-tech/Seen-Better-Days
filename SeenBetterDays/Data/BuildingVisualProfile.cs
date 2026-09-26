@@ -110,8 +110,10 @@ namespace SeenBetterDays.Data
         /// Turns one weathering figure into the mix of families a building of this category would
         /// actually show.
         ///
-        /// Each visual state introduces one new readable kind of damage: Aged has cracks, Worn
-        /// adds dirt, Neglected adds graffiti and Decayed adds stains. Category weights still
+        /// Each visual state introduces new readable kinds of damage: Aged has cracks, Worn adds
+        /// dirt, moss, rust and small tags, Neglected adds full street art, posters and heavy
+        /// plaster damage (decal minimum states, see DecalPrefabInfo.MinState), and Decayed adds
+        /// stains. Category weights still
         /// vary the amount, while the seed moves individual buildings off the average.
         /// </summary>
         public static BuildingVisualProfile FromWeathering(BuildingCategory category, float weathering, uint seed)
@@ -124,21 +126,27 @@ namespace SeenBetterDays.Data
                 return w * weight * (0.7f + 0.6f * rng.NextFloat());
             }
 
-            float dirt, stain, crack, graffiti;
+            float dirt, stain, crack, graffiti, moss, rust;
 
+            // Moss and rust are weathering by time and damp rather than by neglect alone, so they
+            // come in with dirt at Worn. Rust belongs to industry, moss to housing and shops.
             switch (category)
             {
                 case BuildingCategory.Commercial:
                     dirt = Family(1.0f); stain = Family(0.7f); crack = Family(0.8f); graffiti = Family(0.6f);
+                    moss = Family(0.35f); rust = Family(0.2f);
                     break;
                 case BuildingCategory.Office:
                     dirt = Family(0.9f); stain = Family(0.8f); crack = Family(0.8f); graffiti = Family(0.35f);
+                    moss = Family(0.25f); rust = Family(0.15f);
                     break;
                 case BuildingCategory.Industrial:
                     dirt = Family(1.0f); stain = Family(0.8f); crack = Family(0.8f); graffiti = Family(0.35f);
+                    moss = Family(0.15f); rust = Family(0.6f);
                     break;
                 default:
                     dirt = Family(1.0f); stain = Family(0.8f); crack = Family(0.8f); graffiti = Family(0.35f);
+                    moss = Family(0.5f); rust = Family(0.15f);
                     break;
             }
 
@@ -150,7 +158,9 @@ namespace SeenBetterDays.Data
             if (state < VisualState.Worn) dirt = 0f;
             if (state < VisualState.Decayed) stain = 0f;
             if (state < VisualState.Aged) crack = 0f;
-            if (state < VisualState.Neglected) graffiti = 0f;
+            if (state < VisualState.Worn) graffiti = 0f;
+            if (state < VisualState.Worn) moss = 0f;
+            if (state < VisualState.Worn) rust = 0f;
 
             return new BuildingVisualProfile
             {
@@ -160,8 +170,8 @@ namespace SeenBetterDays.Data
                 Dirt = dirt,
                 Stain = stain,
                 Crack = crack,
-                Moss = 0f,
-                Rust = 0f,
+                Moss = moss,
+                Rust = rust,
                 Graffiti = graffiti,
             };
         }

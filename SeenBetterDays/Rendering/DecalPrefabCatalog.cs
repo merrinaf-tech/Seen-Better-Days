@@ -70,6 +70,13 @@ namespace SeenBetterDays.Rendering
         public OverlayFamily AutomaticFamilies;
 
         /// <summary>
+        /// The least weathered state this decal may appear on. Most decals follow their family's
+        /// gate alone; the heavy Urban Decay pieces sit in the crack family but are too big and
+        /// too strong for an Aged building, so they wait for Neglected.
+        /// </summary>
+        public SeenBetterDays.Data.VisualState MinState;
+
+        /// <summary>
         /// Whether this decal may be put on a wall.
         ///
         /// The layer mask alone is not enough, and trusting it put a road arrow on the side of an
@@ -178,15 +185,19 @@ namespace SeenBetterDays.Rendering
             public string Prefix;
             public OverlayFamily AssetFamily;
             public OverlayFamily AutomaticFamily;
+            /// <summary>The least weathered state this source's decals may appear on.</summary>
+            public SeenBetterDays.Data.VisualState MinState;
 
             public AutomaticSourceRule(
                 string prefix,
                 OverlayFamily assetFamily,
-                OverlayFamily automaticFamily)
+                OverlayFamily automaticFamily,
+                SeenBetterDays.Data.VisualState minState = SeenBetterDays.Data.VisualState.Maintained)
             {
                 Prefix = prefix;
                 AssetFamily = assetFamily;
                 AutomaticFamily = automaticFamily;
+                MinState = minState;
             }
         }
 
@@ -203,7 +214,11 @@ namespace SeenBetterDays.Rendering
             new AutomaticSourceRule("G87 Road Repair Patch Pack", OverlayFamily.Crack, OverlayFamily.Stain),
             new AutomaticSourceRule("Fallen leaves decals", OverlayFamily.Dirt, OverlayFamily.Dirt),
             new AutomaticSourceRule("G87 Trash Decals Dirty Pack", OverlayFamily.Dirt, OverlayFamily.Dirt),
-            new AutomaticSourceRule("Street Art Decal Pack", OverlayFamily.Graffiti, OverlayFamily.Graffiti),
+            // Graffiti comes in two sizes. Small tags (Scribbles & Tags) are on ordinary buildings
+            // too and appear from Worn with the rest of the family; full street art pieces belong
+            // to properly neglected blocks and wait for Neglected.
+            new AutomaticSourceRule("Street Art Decal Pack", OverlayFamily.Graffiti, OverlayFamily.Graffiti,
+                SeenBetterDays.Data.VisualState.Neglected),
 
             // A mixed pack. AutomaticFamily None keeps each asset's own named family, limited to
             // AssetFamily: "G87 Moss 04" supplies Moss, "G87 Rust 12" Rust.
@@ -218,11 +233,11 @@ namespace SeenBetterDays.Rendering
 
         /// <summary>
         /// The Urban Decay wall pieces worth putting on a building, by the number in their name,
-        /// with the stage they belong to. Chosen from the packs' own icons on 2026-09-27:
+        /// with the family they supply. Chosen from the packs' own icons on 2026-09-27:
         ///
-        /// - peeling plaster ("Damage Wall") and holes are heavy damage, so Stain, the late slot
-        ///   the road-repair patches already use;
-        /// - pipe leaks are Stain; moss is Moss;
+        /// - peeling plaster ("Damage Wall"), holes and pipe leaks are damage, so Crack - but only
+        ///   from Neglected (s_UrbanDecayHeavy): they are large and strong, wrong on an Aged wall;
+        /// - moss is Moss, which opens at Worn;
         /// - torn posters go with graffiti, which only the most neglected states draw.
         ///
         /// Left out: the two favela brick walls (3, 4) and the four rusty roofs (29-32), which are
@@ -234,18 +249,34 @@ namespace SeenBetterDays.Rendering
             { 1, OverlayFamily.Graffiti }, { 19, OverlayFamily.Graffiti }, { 23, OverlayFamily.Graffiti },
             { 25, OverlayFamily.Graffiti },
             { 5, OverlayFamily.Moss }, { 14, OverlayFamily.Moss }, { 17, OverlayFamily.Moss },
-            { 20, OverlayFamily.Stain }, { 21, OverlayFamily.Stain },
-            { 2, OverlayFamily.Stain }, { 6, OverlayFamily.Stain }, { 7, OverlayFamily.Stain },
-            { 8, OverlayFamily.Stain }, { 9, OverlayFamily.Stain }, { 10, OverlayFamily.Stain },
-            { 11, OverlayFamily.Stain }, { 12, OverlayFamily.Stain }, { 13, OverlayFamily.Stain },
-            { 15, OverlayFamily.Stain }, { 16, OverlayFamily.Stain }, { 18, OverlayFamily.Stain },
-            { 22, OverlayFamily.Stain }, { 24, OverlayFamily.Stain }, { 26, OverlayFamily.Stain },
-            { 27, OverlayFamily.Stain },
+            { 20, OverlayFamily.Crack }, { 21, OverlayFamily.Crack },
+            { 2, OverlayFamily.Crack }, { 6, OverlayFamily.Crack }, { 7, OverlayFamily.Crack },
+            { 8, OverlayFamily.Crack }, { 9, OverlayFamily.Crack }, { 10, OverlayFamily.Crack },
+            { 11, OverlayFamily.Crack }, { 12, OverlayFamily.Crack }, { 13, OverlayFamily.Crack },
+            { 15, OverlayFamily.Crack }, { 16, OverlayFamily.Crack }, { 18, OverlayFamily.Crack },
+            { 22, OverlayFamily.Crack }, { 24, OverlayFamily.Crack }, { 26, OverlayFamily.Crack },
+            { 27, OverlayFamily.Crack },
+        };
+
+        /// <summary>Urban Decay pieces that wait for Neglected - the heavy damage, and the torn
+        /// posters, which go with full street art rather than small tags. See
+        /// <see cref="DecalPrefabInfo.MinState"/>.</summary>
+        private static readonly HashSet<int> s_UrbanDecayHeavy = new HashSet<int>
+        {
+            2, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 18, 20, 21, 22, 24, 26, 27,
+            1, 19, 23, 25,
         };
 
         /// <summary>The family of an Urban Decay wall piece, or None if it is not on the list.</summary>
         private static OverlayFamily UrbanDecayFamily(string name)
         {
+            SeenBetterDays.Data.VisualState ignored;
+            return UrbanDecayFamily(name, out ignored);
+        }
+
+        private static OverlayFamily UrbanDecayFamily(string name, out SeenBetterDays.Data.VisualState minState)
+        {
+            minState = SeenBetterDays.Data.VisualState.Maintained;
             const string marker = "urban decay decal ";
             int at = name.ToLowerInvariant().IndexOf(marker, StringComparison.Ordinal);
             if (at < 0)
@@ -262,11 +293,19 @@ namespace SeenBetterDays.Rendering
 
             int number;
             OverlayFamily family;
-            return end > start
+            if (end > start
                 && int.TryParse(name.Substring(start, end - start), out number)
-                && s_UrbanDecayWall.TryGetValue(number, out family)
-                ? family
-                : OverlayFamily.None;
+                && s_UrbanDecayWall.TryGetValue(number, out family))
+            {
+                if (s_UrbanDecayHeavy.Contains(number))
+                {
+                    minState = SeenBetterDays.Data.VisualState.Neglected;
+                }
+
+                return family;
+            }
+
+            return OverlayFamily.None;
         }
 
         /// <summary>How many automatic assets each whitelisted source supplied in the last
@@ -572,7 +611,7 @@ namespace SeenBetterDays.Rendering
                     m_BuildingCapable.Add(info);
 
                     int sourceIndex;
-                    info.AutomaticFamilies = ClassifyForAutomaticUse(info.Name, info.Families, out sourceIndex);
+                    info.AutomaticFamilies = ClassifyForAutomaticUse(info.Name, info.Families, out sourceIndex, out info.MinState);
                     if (info.SmallestEdge >= MinAutoEdge
                         && info.AutomaticFamilies != OverlayFamily.None)
                     {
@@ -726,9 +765,11 @@ namespace SeenBetterDays.Rendering
         /// source. Requiring both an approved source and a matching asset name prevents a future
         /// mixed pack from contributing unrelated objects merely because its package is trusted.
         /// </summary>
-        private static OverlayFamily ClassifyForAutomaticUse(string name, OverlayFamily namedFamilies, out int sourceIndex)
+        private static OverlayFamily ClassifyForAutomaticUse(string name, OverlayFamily namedFamilies, out int sourceIndex,
+            out SeenBetterDays.Data.VisualState minState)
         {
             sourceIndex = -1;
+            minState = SeenBetterDays.Data.VisualState.Maintained;
             if (string.IsNullOrEmpty(name))
             {
                 return OverlayFamily.None;
@@ -743,7 +784,7 @@ namespace SeenBetterDays.Rendering
                     && normalisedForNumbered.StartsWith(Normalise(numbered.Prefix), StringComparison.Ordinal))
                 {
                     sourceIndex = i;
-                    return UrbanDecayFamily(name);
+                    return UrbanDecayFamily(name, out minState);
                 }
             }
 
@@ -771,6 +812,7 @@ namespace SeenBetterDays.Rendering
                     return OverlayFamily.None;
                 }
 
+                minState = source.MinState;
                 return source.AutomaticFamily == OverlayFamily.None ? allowed : source.AutomaticFamily;
             }
 
@@ -838,7 +880,8 @@ namespace SeenBetterDays.Rendering
             float maxWidth,
             float maxHeight,
             ref Unity.Mathematics.Random rng,
-            out bool wasFamilyMatch)
+            out bool wasFamilyMatch,
+            SeenBetterDays.Data.VisualState state = SeenBetterDays.Data.VisualState.Decayed)
         {
             wasFamilyMatch = false;
 
@@ -865,7 +908,8 @@ namespace SeenBetterDays.Rendering
                     : pool[i].AutomaticFamilies;
                 if ((available & family) != 0
                     && (allowNonBuildingDecals
-                        || (pool[i].Size.x <= maxWidth && pool[i].Size.z <= maxHeight)))
+                        || (pool[i].Size.x <= maxWidth && pool[i].Size.z <= maxHeight
+                            && pool[i].MinState <= state)))
                 {
                     matches++;
                 }
@@ -882,7 +926,8 @@ namespace SeenBetterDays.Rendering
                         : pool[i].AutomaticFamilies;
                     if ((available & family) != 0
                         && (allowNonBuildingDecals
-                            || (pool[i].Size.x <= maxWidth && pool[i].Size.z <= maxHeight))
+                            || (pool[i].Size.x <= maxWidth && pool[i].Size.z <= maxHeight
+                                && pool[i].MinState <= state))
                         && wanted-- == 0)
                     {
                         return pool[i];

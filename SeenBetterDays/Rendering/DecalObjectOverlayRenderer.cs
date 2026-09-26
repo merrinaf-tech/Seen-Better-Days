@@ -97,6 +97,10 @@ namespace SeenBetterDays.Rendering
         private readonly Dictionary<Entity, OverlayRecord> m_Records = new Dictionary<Entity, OverlayRecord>();
         private readonly List<PendingElement> m_Pending = new List<PendingElement>(MaxPerBuilding);
 
+        /// <summary>The state of the building being planned, for decals with a minimum state
+        /// (DecalPrefabInfo.MinState). Set at the start of Apply.</summary>
+        private VisualState m_PlanState;
+
         [System.Flags]
         private enum RuntimeInitialization : byte
         {
@@ -255,6 +259,7 @@ namespace SeenBetterDays.Rendering
             }
 
             m_Pending.Clear();
+            m_PlanState = profile.State;
             Unity.Mathematics.Random rng = new Unity.Mathematics.Random(profile.Seed == 0u ? 1u : profile.Seed);
 
             m_LastFamilies.Clear();
@@ -279,7 +284,8 @@ namespace SeenBetterDays.Rendering
             // families that already give the recovery pass several ways to fill the front.
             PlanRequiredFrontAgedCrack(building, profile, ref rng);
 
-            // At Neglected and Decayed, a player looking from the road must actually be able to
+            // From Worn on (small tags only until Neglected, see DecalPrefabInfo.MinState), a player
+            // looking from the road must actually be able to
             // read the newly introduced graffiti family. A purely round-robin plan can truthfully
             // contain four graffiti while putting every recognisable one on a flank or the rear.
             // Reserve one low, street-facing example first; PlanAllFamilies accounts for it when
@@ -1176,7 +1182,8 @@ namespace SeenBetterDays.Rendering
                     front.Width,
                     front.Height,
                     ref rng,
-                    out familyMatched);
+                    out familyMatched,
+                    profile.State);
 
                 if (decal == null)
                 {
@@ -1241,7 +1248,8 @@ namespace SeenBetterDays.Rendering
                     front.Width,
                     front.Height,
                     ref rng,
-                    out familyMatched);
+                    out familyMatched,
+                    profile.State);
 
                 if (decal == null)
                 {
@@ -1538,7 +1546,8 @@ namespace SeenBetterDays.Rendering
                             facade.Width,
                             facade.Height,
                             ref rng,
-                            out familyMatched);
+                            out familyMatched,
+                            profile.State);
                     }
 
                     if (decal == null)
@@ -1610,7 +1619,8 @@ namespace SeenBetterDays.Rendering
                             facade.Width,
                             facade.Height,
                             ref rng,
-                            out familyMatched);
+                            out familyMatched,
+                            m_PlanState);
                     }
 
                     if (decal == null)
