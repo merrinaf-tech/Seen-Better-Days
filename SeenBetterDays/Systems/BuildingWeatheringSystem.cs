@@ -750,9 +750,10 @@ namespace SeenBetterDays.Systems
                 ? " for " + category.ToString().ToLowerInvariant()
                 : " citywide";
 
-            float target = WeatheringTarget.Compute(
+            WeatheringTarget.Parts parts = WeatheringTarget.Explain(
                 condition, abandonCost, spawnable.m_Level, efficiency, abandoned,
                 poverty, wealth, SeedFor(building));
+            float target = parts.Target;
 
             // What is on the building right now, which during a slow recovery is not the target.
             float shown = EntityManager.HasComponent<WeatheringState>(building)
@@ -861,9 +862,45 @@ namespace SeenBetterDays.Systems
                     BuildingVisualProfile.StateFor(target), target * 100f);
             }
 
-            text = string.Format("{0} - {1:0}% weathered{2}\n{3}\n{4}\n{5}{6}{7}",
+            // Why it is not Maintained: the part of the formula that decided the value, from the
+            // same Explain the simulation uses, so the reason cannot disagree with the number.
+            // Maintained buildings keep the plain street line - there is nothing to explain.
+            string reasonLine = street + trouble;
+            if (visual != VisualState.Maintained)
+            {
+                if (parts.Abandoned)
+                {
+                    reasonLine = "why: abandoned";
+                }
+                else if (parts.Distress > 0f && parts.Distress >= parts.PoorStreet && parts.Distress >= parts.Floor)
+                {
+                    reasonLine = string.Format("why: its owners cannot cover upkeep (short by {0} of {1})",
+                                               -condition, abandonCost);
+                }
+                else if (parts.PoorStreet >= parts.Floor)
+                {
+                    reasonLine = string.Format("why: one of the cheapest {0} streets ({1:0} against a median of {2:0}{3})",
+                                               category.ToString().ToLowerInvariant(), landValue,
+                                               reference.Median, compared);
+                }
+                else
+                {
+                    reasonLine = string.Format("why: an ordinary level {0} building{1}{2}",
+                                               spawnable.m_Level,
+                                               parts.Individuality > 1.1f ? ", kept worse than most like it"
+                                                   : parts.Individuality < 0.9f ? ", kept better than most like it" : "",
+                                               wealth > 0.05f ? ", on a well-off street" : "");
+                }
+
+                if (!parts.Abandoned && parts.Neglect > 0.02f)
+                {
+                    reasonLine += string.Format("; services lacking (efficiency {0:0}%)", efficiency * 100f);
+                }
+            }
+
+            text = string.Format("{0} - {1:0}% weathered{2}\n{3}\n{4}\n{5}{6}",
                                  state, shown * 100f, hold, colour, decals,
-                                 street, trouble, trajectory);
+                                 reasonLine, trajectory);
             return true;
         }
 

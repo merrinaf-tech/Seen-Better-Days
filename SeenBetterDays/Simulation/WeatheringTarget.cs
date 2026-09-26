@@ -69,12 +69,40 @@ namespace SeenBetterDays.Simulation
         /// </param>
         public static float Compute(int condition, int abandonCost, int level, float efficiency, bool abandoned, float poverty, float wealth, uint seed)
         {
+            return Explain(condition, abandonCost, level, efficiency, abandoned, poverty, wealth, seed).Target;
+        }
+
+        /// <summary>
+        /// The target together with the parts it was made from, so the tooltip can say which one
+        /// decided it. There is only this one formula: Compute returns its Target, so an
+        /// explanation can never disagree with the value it explains.
+        /// </summary>
+        public struct Parts
+        {
+            public float Target;
+            public bool Abandoned;
+            /// <summary>How close the building is to being abandoned for debt, 0..1.</summary>
+            public float Distress;
+            /// <summary>What an ordinary street does to a building of this level, after wealth
+            /// and this building's own upkeep luck.</summary>
+            public float Floor;
+            /// <summary>This building's upkeep luck against others like it: below 1 better kept,
+            /// above 1 worse.</summary>
+            public float Individuality;
+            /// <summary>How far down its own zone type's land values the street sits.</summary>
+            public float PoorStreet;
+            /// <summary>What missing services add.</summary>
+            public float Neglect;
+        }
+
+        public static Parts Explain(int condition, int abandonCost, int level, float efficiency, bool abandoned, float poverty, float wealth, uint seed)
+        {
             // Abandonment is the end of the scale, but only as a destination. The approach rate
             // is what stops a building going derelict the instant its last tenant leaves - the
             // brief is explicit that abandonment must not force Decayed immediately.
             if (abandoned)
             {
-                return 1f;
+                return new Parts { Target = 1f, Abandoned = true };
             }
 
             // Only the negative half of condition means anything for weathering. Positive means
@@ -125,7 +153,15 @@ namespace SeenBetterDays.Simulation
 
             // Distress dominates, and the level floor only lifts the bottom rather than adding on
             // top - a struggling cheap building should not read as worse than a derelict one.
-            return math.saturate(math.max(math.max(floor, poorStreet), distress) + neglect * (1f - distress));
+            return new Parts
+            {
+                Target = math.saturate(math.max(math.max(floor, poorStreet), distress) + neglect * (1f - distress)),
+                Distress = distress,
+                Floor = floor,
+                Individuality = individuality,
+                PoorStreet = poorStreet,
+                Neglect = neglect,
+            };
         }
 
         /// <summary>
