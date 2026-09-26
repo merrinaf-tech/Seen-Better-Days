@@ -215,7 +215,9 @@ namespace SeenBetterDays.Rendering
             return "MeshColor entries " + live
                  + ", snapshot entries " + snapshot
                  + ", custom colour " + (IsOverridden(building) ? "yes"
-                        : m_EntityManager.HasBuffer<CustomMeshColor>(building) ? "present but off" : "no")
+                        : m_EntityManager.HasBuffer<CustomMeshColor>(building)
+                            ? (m_SaveSuspended.ContainsKey(building) ? "present but off (suspended by us for a save)" : "present but off")
+                            : "no")
                  + ", weathered by us " + (Has(building) ? "yes" : "no")
                  + ", sub-objects " + subObjects + " of which " + subObjectsWithColour + " carry their own colours"
                  + ", weatherable " + (can ? "yes" : "no - " + reason);
@@ -470,16 +472,26 @@ namespace SeenBetterDays.Rendering
             m_EntityManager.CompleteAllTrackedJobs();
 
             int enabled = 0;
+            var untracked = new List<Entity>();
             foreach (KeyValuePair<Entity, ColorSet> suspended in m_SaveSuspended)
             {
                 Entity building = suspended.Key;
-                Record record;
                 if (!m_EntityManager.Exists(building)
-                    || !m_Records.TryGetValue(building, out record)
                     || !m_EntityManager.HasBuffer<CustomMeshColor>(building)
                     || m_EntityManager.IsComponentEnabled<CustomMeshColor>(building)
                     || !CustomColourEquals(building, suspended.Value))
                 {
+                    continue;
+                }
+
+                // No longer ours to re-enable (weathering stopped for it during the save), but the
+                // disabled buffer is still the one we left. Take it off rather than leave it: a
+                // disabled override on a building the mod has forgotten is invisible and blocks
+                // recolouring that reuses the buffer.
+                Record record;
+                if (!m_Records.TryGetValue(building, out record))
+                {
+                    untracked.Add(building);
                     continue;
                 }
 
@@ -492,6 +504,12 @@ namespace SeenBetterDays.Rendering
 
                 m_EntityManager.SetComponentEnabled<CustomMeshColor>(building, true);
                 enabled++;
+            }
+
+            // Structural, so after the loop over the dictionary rather than inside it.
+            for (int i = 0; i < untracked.Count; i++)
+            {
+                RestoreColours(untracked[i]);
             }
 
             m_SaveSuspended.Clear();
@@ -705,8 +723,9 @@ namespace SeenBetterDays.Rendering
             // CustomMeshColor is shared with recolouring mods and carries no author id. If its
             // value no longer matches what we wrote, another system has taken ownership since our
             // last pass. Forget our record without deleting or replacing that newer colour.
-            bool restore = StillOurs(building, record);
+            bool restore = StillOurs(building, record) || SuspendedByUs(building);
             m_Records.Remove(building);
+            m_SaveSuspended.Remove(building);
 
             if (restore)
             {
@@ -722,14 +741,36 @@ namespace SeenBetterDays.Rendering
 
             foreach (KeyValuePair<Entity, Record> pair in m_Records)
             {
-                if (StillOurs(pair.Key, pair.Value))
+                if (StillOurs(pair.Key, pair.Value) || SuspendedByUs(pair.Key))
                 {
                     RestoreColours(pair.Key);
                 }
             }
 
             m_Records.Clear();
+            m_SaveSuspended.Clear();
             return cleared;
+        }
+
+        /// <summary>
+        /// Whether this building's override is the one SuspendForSave switched off and nobody has
+        /// touched since: disabled, and still holding the clean colour written at that moment.
+        ///
+        /// StillOurs says no to a disabled buffer, which is right in general - but for these it
+        /// made Remove and RemoveAll forget the building without restoring it, and ResumeAfterSave
+        /// then skipped it because it was no longer tracked. The building was left with a disabled
+        /// CustomMeshColor for good, and a recolour that writes into the existing buffer without
+        /// enabling it no longer showed. Reported on 2026-09-27 as one building the vanilla colour
+        /// change stopped working on after the effect was switched off.
+        /// </summary>
+        private bool SuspendedByUs(Entity building)
+        {
+            ColorSet clean;
+            return m_SaveSuspended.TryGetValue(building, out clean)
+                && m_EntityManager.Exists(building)
+                && m_EntityManager.HasBuffer<CustomMeshColor>(building)
+                && !m_EntityManager.IsComponentEnabled<CustomMeshColor>(building)
+                && CustomColourEquals(building, clean);
         }
 
         /// <summary>
