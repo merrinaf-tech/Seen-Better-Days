@@ -7,3 +7,6 @@ Library/
 # Development record. Never publish: a visible AI-session log in a repo linked from a mod
 # listing reads as "not to standard" to reviewers. See docs/LESSONS.md's own header.
 docs/LESSONS.md
+
+# Development workbench: notes, player feedback, backups, logs. Never published.
+_dev/
