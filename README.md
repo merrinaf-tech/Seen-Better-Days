@@ -105,7 +105,7 @@ project blocks deployment while `Cities2.exe` is running to avoid a half-written
 
 ```powershell
 $env:DOTNET_ROLL_FORWARD = 'Major'
-& "$env:USERPROFILE\.dotnet\dotnet.exe" build SeenBetterDays\SeenBetterDays.csproj -c Release
+dotnet build SeenBetterDays\SeenBetterDays.csproj -c Release
 ```
 
 The build deploys to
