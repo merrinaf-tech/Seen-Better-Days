@@ -106,6 +106,16 @@ namespace SeenBetterDays.Settings
         [SettingsUIDisableByCondition(typeof(SeenBetterDaysSettings), nameof(IsWeatheringDisabled))]
         public bool EnableStateKeys { get; set; }
 
+        /// <summary>
+        /// The rest of the Ctrl+Alt developer harness: forced profiles, manual decals, catalogue
+        /// and census dumps, emergency cleanups. Off by default and behind the advanced switch -
+        /// these are tools for tuning the mod, and a stray chord should not repaint a player's
+        /// street.
+        /// </summary>
+        [SettingsUISection(MainSection, DeveloperGroup)]
+        [SettingsUIAdvanced]
+        public bool EnableDeveloperShortcuts { get; set; }
+
         /// <summary>Used by the disable conditions above: everything else is meaningless with the
         /// mod switched off, and a page of live controls that do nothing is a lie.</summary>
         public bool IsWeatheringDisabled()
@@ -126,6 +136,7 @@ namespace SeenBetterDays.Settings
             Intensity = DefaultIntensity;
             ShowMaintenanceTooltip = false;
             EnableStateKeys = false;
+            EnableDeveloperShortcuts = false;
         }
     }
 }

@@ -11,13 +11,12 @@ using System.Threading;
 namespace SeenBetterDays
 {
     /// <summary>
-    /// Seen Better Days - rendering proof of concept.
+    /// Seen Better Days: growable buildings that look the way their circumstances are.
     ///
-    /// This build does not age anything. It exists to answer one question: can we add visible
-    /// weathering to a single growable building instance, dynamically and cheaply, without
-    /// touching its textures and without changing any other building that shares its prefab.
-    /// The findings, the chosen technique and what is still open are in docs/RENDERING_POC.md;
-    /// the test instructions are in README.md.
+    /// Each building gets a per-instance colour layer city-wide and, near the camera, decals from
+    /// an approved list of decal packs - without touching textures and without changing any other
+    /// building that shares its prefab. How much weathering a building gets is read from the
+    /// simulation (condition, efficiency, abandonment, level, street value); nothing accumulates.
     ///
     /// Runtime visual changes are deliberately stripped during serialization rather than
     /// persisted, so a city saved with this installed contains nothing of it and still opens for

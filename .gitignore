@@ -10,3 +10,6 @@ docs/LESSONS.md
 
 # Development workbench: notes, player feedback, backups, logs. Never published.
 _dev/
+
+# Source art: the exported PNG is versioned, the layered original is not
+Pic/*.psd

@@ -28,7 +28,7 @@ namespace SeenBetterDays.Rendering
     /// game already handles in the hundreds of thousands, not managed objects or per-frame
     /// main-thread work.
     ///
-    /// Known deliberate limits in this phase, all documented in docs/RENDERING_POC.md:
+    /// Known deliberate limits in this phase, all documented in the development notes:
     ///   - the bounding box proposes candidate positions, then mesh raycasts find the real wall;
     ///   - a decal's size is fixed by its prefab (object entities carry no scale), so size
     ///     variation needs several prefabs rather than one scaled one;

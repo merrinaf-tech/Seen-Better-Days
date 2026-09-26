@@ -26,7 +26,7 @@ namespace SeenBetterDays.Rendering
     ///
     /// What it cannot express is location: grime everywhere, but not graffiti *here* and a crack
     /// *there*. That remains a job for a close-range decal layer on top, once the decal route is
-    /// understood (see docs/RENDERING_POC.md).
+    /// understood (see the development notes).
     /// </summary>
     public sealed class MeshColorOverlayRenderer : IBuildingOverlayRenderer
     {

@@ -11,7 +11,7 @@ namespace SeenBetterDays.Rendering
     ///
     /// Two backends are foreseen and are why this interface exists at all:
     ///   - <see cref="DecalObjectOverlayRenderer"/> - native Cities: Skylines II decal objects
-    ///     (implemented; see docs/RENDERING_POC.md for why it was chosen first);
+    ///     (implemented; see the development notes for why it was chosen first);
     ///   - a runtime <c>Graphics.DrawMesh</c> renderer, if we ever need geometry the decal
     ///     system cannot express. Verified feasible but not built in this phase.
     /// </summary>

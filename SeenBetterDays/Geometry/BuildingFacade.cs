@@ -11,7 +11,7 @@ namespace SeenBetterDays.Geometry
     /// This is the deliberately crude half of the proof of concept. Everything here is
     /// derived from the prefab's axis-aligned local bounds (<see cref="ObjectGeometryData"/>)
     /// and the instance's <see cref="Transform"/> - no mesh reading, no submesh inspection,
-    /// no real facade analysis. See docs/RENDERING_POC.md for what a real implementation
+    /// no real facade analysis. See the development notes for what a real implementation
     /// would need instead, and why the box is good enough to prove the rendering question.
     /// </summary>
     public struct BuildingFacade

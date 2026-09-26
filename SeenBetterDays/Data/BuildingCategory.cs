@@ -2,7 +2,7 @@ namespace SeenBetterDays.Data
 {
     /// <summary>
     /// The four growable categories Seen Better Days will eventually weather differently
-    /// (see docs/RENDERING_POC.md, "Future building-category variation"), plus the two
+    /// (see the development notes, "Future building-category variation"), plus the two
     /// verdicts that mean "not our business".
     /// </summary>
     public enum BuildingCategory

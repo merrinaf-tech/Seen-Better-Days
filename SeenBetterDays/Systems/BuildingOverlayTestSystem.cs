@@ -339,6 +339,15 @@ namespace SeenBetterDays.Systems
                 return;
             }
 
+            // The rest of this is the developer harness - forced states, catalogue dumps, manual
+            // decals, emergency cleanups. Players do not get it unless they opt in from the
+            // advanced options. The state keys have an option of their own and stay reachable.
+            if (Mod.Settings == null || !Mod.Settings.EnableDeveloperShortcuts)
+            {
+                HandleStateKeys(keyboard);
+                return;
+            }
+
             // Name every Ctrl+Alt chord we receive, handled or not. Without this a hotkey that
             // produces no log line is ambiguous between "the handler bailed", "the branch is
             // unreachable" and "the keystroke never reached the game at all" - and telling those
@@ -553,6 +562,21 @@ namespace SeenBetterDays.Systems
             {
                 return;
             }
+
+            m_InputCooldown = 15;
+        }
+
+        /// <summary>Ctrl+Alt+F1 to F6 only, for players who enabled the state keys but not the
+        /// developer shortcuts. SetWeatheringByHand checks the state-keys option itself.</summary>
+        private void HandleStateKeys(Keyboard keyboard)
+        {
+            if (keyboard.f1Key.wasPressedThisFrame) SetWeatheringByHand(VisualState.Maintained, 0f);
+            else if (keyboard.f2Key.wasPressedThisFrame) SetWeatheringByHand(VisualState.Aged, 0.22f);
+            else if (keyboard.f3Key.wasPressedThisFrame) SetWeatheringByHand(VisualState.Worn, 0.47f);
+            else if (keyboard.f4Key.wasPressedThisFrame) SetWeatheringByHand(VisualState.Neglected, 0.72f);
+            else if (keyboard.f5Key.wasPressedThisFrame) SetWeatheringByHand(VisualState.Decayed, 0.95f);
+            else if (keyboard.f6Key.wasPressedThisFrame) ReleaseWeatheringByHand();
+            else return;
 
             m_InputCooldown = 15;
         }

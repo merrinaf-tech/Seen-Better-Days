@@ -1,14 +1,84 @@
 <Publish>
 	<!--
-	  Rendering proof of concept. NOT published, and must not be: there is no ModId, no
-	  thumbnail and no screenshots, and the Paradox Mods publisher wipes any metadata this
-	  file does not declare. Fill this in only when Seen Better Days is an actual mod.
+	  WARNING: this file is destructive.
+
+	  PrepareMetadata calls WithForumLinks, WithExternalLinks, WithDependencies and WithTags
+	  UNCONDITIONALLY. Anything not declared here is sent as an empty set and WIPED from the live
+	  listing - including values added through the website. Screenshots are the only exception
+	  (WithScreenshots is skipped on an empty set), so website-uploaded screenshots survive.
+
+	  So: this file is the single source of truth. If you add a link, a tag or a dependency on the
+	  website, copy it back in here before the next publish, or the next publish deletes it.
+
+	  No ModId yet: the first upload uses the Publish command, which assigns one. Write it here
+	  straight away; from then on Publish is refused and NewVersion / Update are the commands.
+
+	  The decal packs are deliberately NOT declared as dependencies. Every one of them is optional:
+	  the mod draws from whichever are installed, and the colour layer works with none.
 	-->
-	<DisplayName Value="Seen Better Days (rendering POC)" />
-	<ShortDescription Value="Developer build. Proves per-instance weathering overlays on growable buildings." />
-	<LongDescription>Internal rendering proof of concept - see docs/RENDERING_POC.md.</LongDescription>
+
+	<DisplayName Value="Seen Better Days" />
+	<ShortDescription Value="Growable buildings look the way their circumstances are: cared for, worn or neglected, each one on its own." />
+
+	<LongDescription>
+# Seen Better Days
+
+Every building in the same street, looking exactly the same. Not any more.
+
+Seen Better Days makes growable buildings reflect how they are doing. A building's look follows its real circumstances - its condition, the services it gets, whether it is abandoned, its level and how its street compares with the rest of your city. Nothing ages on a timer: a building whose situation improves cleans up again on its own.
+
+## What you get
+
+- **Colour, city-wide.** Each building gets its own gentle darkening and fading, so two identical towers side by side no longer look like copies. Readable at any distance and light on performance.
+- **Detail, up close.** Near the camera, weathered buildings pick up stains, cracks, graffiti, rubbish and fallen leaves, placed on the real walls. Move away and they go again.
+- **Five states** - Maintained, Aged, Worn, Neglected and Decayed. A well-off building stays Maintained, however old it is.
+
+## Decal packs - all optional
+
+The close-up detail uses decals only from the packs below, and only from the ones you already have. **None of them is required.** With none installed you still get the colour layer; every pack you add brings its own kind of mark.
+
+- [Stains and Leakage Decal Pack](https://mods.paradoxplaza.com/mods/80584/Windows)
+- [Cracks and Damage Decal Pack](https://mods.paradoxplaza.com/mods/80583/Windows)
+- [Scribbles and Tags Decal Pack](https://mods.paradoxplaza.com/mods/93949/Windows)
+- [Street Art Decal Pack](https://mods.paradoxplaza.com/mods/93866/Windows)
+- [[G87] Stains and Puddles Decals: Wet Pack](https://mods.paradoxplaza.com/mods/87948/Windows)
+- [[G87] Road Repair: Patch Pack](https://mods.paradoxplaza.com/mods/92004/Windows)
+- [[G87] Trash Decals](https://mods.paradoxplaza.com/mods/87720/Windows)
+- [Fallen leaves decals](https://mods.paradoxplaza.com/mods/96995/Windows)
+
+**Know a decal pack that would suit?** Tell me in the comments and I will look at adding it to the list.
+
+## Options
+
+- **Weather buildings** - the whole effect, on or off, live.
+- **Close-range detail** - the decals, on or off.
+- **Intensity** - from 25% to 200%.
+- **Rebuild Seen Better Days appearance** - clears everything the mod drew and applies it again.
+
+With the game's **Show Advanced** switch on: a tooltip explaining why a building looks the way it does, keys to set a building's state by hand, and the developer shortcuts. All are off by default.
+
+## Good to know
+
+This is an early version. Buildings already recoloured by Recolor or another mod are left alone. If something looks wrong, a comment with a screenshot helps a lot.
+
+Free and open source under the MIT licence: [source on GitHub](https://github.com/merrinaf-tech/Seen-Better-Days).
+	</LongDescription>
+
+	<Thumbnail Value="Properties/Thumbnail.png" />
+
+	<Tag Value="Code Mod" />
+
+	<ExternalLink Type="github" Url="https://github.com/merrinaf-tech/Seen-Better-Days" />
+	<ExternalLink Type="kofi" Url="https://ko-fi.com/fabiozsche" />
+
 	<ModVersion Value="0.1.0" />
+
+	<!-- Built and verified against game build 1.6.2f1. -->
 	<GameVersion Value="1.6.*" />
-	<AccessLevel Value="Private" />
-	<ChangeLog>Initial rendering proof of concept.</ChangeLog>
+
+	<!-- Public | Unlisted | Private -->
+	<AccessLevel Value="Public" />
+
+	<!-- Read by Update and NewVersion only; the first Publish ignores it. -->
+	<ChangeLog>First public version.</ChangeLog>
 </Publish>

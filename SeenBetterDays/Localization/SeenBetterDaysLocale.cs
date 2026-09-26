@@ -101,6 +101,18 @@ namespace SeenBetterDays.Localization
                   + "nothing is saved either way. Meant for seeing the five states side by side, "
                   + "which a healthy city will never show you on its own."
                 },
+
+                {
+                    m_Settings.GetOptionLabelLocaleID(nameof(SeenBetterDaysSettings.EnableDeveloperShortcuts)),
+                    "Developer shortcuts"
+                },
+                {
+                    m_Settings.GetOptionDescLocaleID(nameof(SeenBetterDaysSettings.EnableDeveloperShortcuts)),
+                    "Turns on the Ctrl+Alt keys used to develop and tune the mod: forced looks, "
+                  + "manual decals, diagnostics written to the log and emergency cleanups. They "
+                  + "can repaint buildings on purpose, so leave this off unless you know you "
+                  + "need it."
+                },
             };
         }
 
