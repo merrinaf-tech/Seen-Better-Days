@@ -23,24 +23,20 @@ situation improves recovers on its own.
   switched off where that colour is the prefab's own, left on where the player chose it. The mod's
   decal entities are left out of the save.
 
-## Decal packs
+## States and decal packs
 
 Decals come only from an approved list, and only from packs the player has installed. All are
 optional; the colour layer works without any of them.
 
-| Pack | Paradox Mods |
-|---|---|
-| Stains and Leakage Decal Pack | [80584](https://mods.paradoxplaza.com/mods/80584/Windows) |
-| Cracks and Damage Decal Pack | [80583](https://mods.paradoxplaza.com/mods/80583/Windows) |
-| Scribbles and Tags Decal Pack | [93949](https://mods.paradoxplaza.com/mods/93949/Windows) |
-| Street Art Decal Pack | [93866](https://mods.paradoxplaza.com/mods/93866/Windows) |
-| [G87] Stains and Puddles Decals: Wet Pack | [87948](https://mods.paradoxplaza.com/mods/87948/Windows) |
-| [G87] Road Repair: Patch Pack | [92004](https://mods.paradoxplaza.com/mods/92004/Windows) |
-| [G87] Trash Decals | [87720](https://mods.paradoxplaza.com/mods/87720/Windows) |
-| Fallen leaves decals | [96995](https://mods.paradoxplaza.com/mods/96995/Windows) |
-| [G87] Moss and Rust | [108303](https://mods.paradoxplaza.com/mods/108303/Windows) |
-| Urban Decay Pack 1 | [120305](https://mods.paradoxplaza.com/mods/120305/Windows) |
-| Urban Decay Pack 2 | [120500](https://mods.paradoxplaza.com/mods/120500/Windows) |
+Each state keeps the marks of the one before it and adds its own:
+
+| State | Adds | From |
+|---|---|---|
+| Maintained | nothing | - |
+| Aged | cracks and leaks; rust on industrial buildings | [Cracks and Damage Decal Pack](https://mods.paradoxplaza.com/mods/80583/Windows), [Stains and Leakage Decal Pack](https://mods.paradoxplaza.com/mods/80584/Windows); [[G87] Moss and Rust](https://mods.paradoxplaza.com/mods/108303/Windows) |
+| Worn | dirt, rubbish, fallen leaves, moss, rust, small tags | [[G87] Trash Decals](https://mods.paradoxplaza.com/mods/87720/Windows), [Fallen leaves decals](https://mods.paradoxplaza.com/mods/96995/Windows), [[G87] Moss and Rust](https://mods.paradoxplaza.com/mods/108303/Windows), [Scribbles and Tags Decal Pack](https://mods.paradoxplaza.com/mods/93949/Windows); moss from [Urban Decay Pack 1](https://mods.paradoxplaza.com/mods/120305/Windows) and [Urban Decay Pack 2](https://mods.paradoxplaza.com/mods/120500/Windows) |
+| Neglected | street art, peeling plaster, holes, pipe leaks, torn posters | [Street Art Decal Pack](https://mods.paradoxplaza.com/mods/93866/Windows); wall pieces of [Urban Decay Pack 1](https://mods.paradoxplaza.com/mods/120305/Windows) and [Urban Decay Pack 2](https://mods.paradoxplaza.com/mods/120500/Windows) |
+| Decayed | heavy stains, patched walls | [[G87] Stains and Puddles Decals: Wet Pack](https://mods.paradoxplaza.com/mods/87948/Windows), [[G87] Road Repair: Patch Pack](https://mods.paradoxplaza.com/mods/92004/Windows) |
 
 From Moss and Rust, each piece supplies its own family. From the two Urban Decay packs only the
 wall pieces are used - peeling plaster, holes, leaks, moss and torn posters - listed by number,
