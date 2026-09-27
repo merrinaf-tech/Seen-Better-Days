@@ -38,10 +38,22 @@ Seen Better Days makes growable buildings reflect how they are doing. A building
 Each state keeps what the one before it had and adds its own marks. Decals come only from the packs listed, and only from the ones you already have: **none of them is required**. With none installed you still get the colour; every pack you add brings its own kind of mark.
 
 - **Maintained** - clean. A well-off building stays here, however old it is.
-- **Aged** - cracks and leaks: [Cracks and Damage Decal Pack](https://mods.paradoxplaza.com/mods/80583/Windows), [Stains and Leakage Decal Pack](https://mods.paradoxplaza.com/mods/80584/Windows). Industrial buildings start to rust: [[G87] Moss and Rust](https://mods.paradoxplaza.com/mods/108303/Windows).
-- **Worn** - dirt, rubbish, fallen leaves, moss, rust and the first tags: [[G87] Trash Decals](https://mods.paradoxplaza.com/mods/87720/Windows), [Fallen leaves decals](https://mods.paradoxplaza.com/mods/96995/Windows), [[G87] Moss and Rust](https://mods.paradoxplaza.com/mods/108303/Windows), [Scribbles and Tags Decal Pack](https://mods.paradoxplaza.com/mods/93949/Windows), and the moss from [Urban Decay Pack 1](https://mods.paradoxplaza.com/mods/120305/Windows) and [Urban Decay Pack 2](https://mods.paradoxplaza.com/mods/120500/Windows).
-- **Neglected** - street art, peeling plaster, holes, pipe leaks and torn posters: [Street Art Decal Pack](https://mods.paradoxplaza.com/mods/93866/Windows), and the wall pieces of [Urban Decay Pack 1](https://mods.paradoxplaza.com/mods/120305/Windows) and [Urban Decay Pack 2](https://mods.paradoxplaza.com/mods/120500/Windows).
-- **Decayed** - heavy stains and patched walls: [[G87] Stains and Puddles Decals: Wet Pack](https://mods.paradoxplaza.com/mods/87948/Windows), [[G87] Road Repair: Patch Pack](https://mods.paradoxplaza.com/mods/92004/Windows).
+- **Aged** - cracks and leaks, and rust on industrial buildings:
+    - [Cracks and Damage Decal Pack](https://mods.paradoxplaza.com/mods/80583/Windows)
+    - [Stains and Leakage Decal Pack](https://mods.paradoxplaza.com/mods/80584/Windows)
+    - [[G87] Moss and Rust](https://mods.paradoxplaza.com/mods/108303/Windows) (industry only)
+- **Worn** - dirt, rubbish, fallen leaves, moss, rust and the first tags:
+    - [[G87] Trash Decals](https://mods.paradoxplaza.com/mods/87720/Windows)
+    - [Fallen leaves decals](https://mods.paradoxplaza.com/mods/96995/Windows)
+    - [[G87] Moss and Rust](https://mods.paradoxplaza.com/mods/108303/Windows)
+    - [Scribbles and Tags Decal Pack](https://mods.paradoxplaza.com/mods/93949/Windows)
+    - [Urban Decay Pack 1](https://mods.paradoxplaza.com/mods/120305/Windows) and [Urban Decay Pack 2](https://mods.paradoxplaza.com/mods/120500/Windows) (moss)
+- **Neglected** - street art, peeling plaster, holes, pipe leaks and torn posters:
+    - [Street Art Decal Pack](https://mods.paradoxplaza.com/mods/93866/Windows)
+    - [Urban Decay Pack 1](https://mods.paradoxplaza.com/mods/120305/Windows) and [Urban Decay Pack 2](https://mods.paradoxplaza.com/mods/120500/Windows) (wall pieces)
+- **Decayed** - heavy stains and patched walls:
+    - [[G87] Stains and Puddles Decals: Wet Pack](https://mods.paradoxplaza.com/mods/87948/Windows)
+    - [[G87] Road Repair: Patch Pack](https://mods.paradoxplaza.com/mods/92004/Windows)
 
 **Know a decal pack that would suit?** Tell me in the comments and I will look at adding it to the list.
 
