@@ -268,6 +268,10 @@ namespace SeenBetterDays.Rendering
             m_SurfaceRecoveries = 0;
             m_SurfaceMisses = 0;
             m_SurfaceSides = 0;
+            m_Raycasts = 0;
+            m_RaycastTicks = 0;
+            m_TriangleSearches = 0;
+            m_TriangleTicks = 0;
             m_PlannedFacadeMask = 0;
             m_FacadeSequenceStep = 0;
             m_FrontMarkCount = 0;
@@ -973,11 +977,83 @@ namespace SeenBetterDays.Rendering
         /// accessible mesh buffers - the mark is skipped. A bounding-box fallback would recreate
         /// the very bug this raycast is meant to solve.
         /// </summary>
+        // ---- Placement cost, for the slow-placement diagnostic ------------------------------------
+        //
+        // A placement normally picks from the surveyed wall and costs next to nothing. When no
+        // surveyed point is near enough it falls back to a ray against the mesh and then to a
+        // triangle search, both of which walk triangles on the main thread. These counters say
+        // which of them a slow placement spent its time in.
+
+        private int m_Raycasts;
+        private long m_RaycastTicks;
+        private int m_TriangleSearches;
+        private long m_TriangleTicks;
+
+        private bool TimedTryHit(EntityManager entityManager, Entity building, float3 origin, float3 direction,
+            float maxDistance, out float3 point, out float3 normal)
+        {
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            bool hit = BuildingSurfaceProbe.TryHit(entityManager, building, origin, direction, maxDistance,
+                out point, out normal);
+            m_RaycastTicks += System.Diagnostics.Stopwatch.GetTimestamp() - started;
+            m_Raycasts++;
+            return hit;
+        }
+
+        private bool TimedTryFindFacadePoint(EntityManager entityManager, Entity building, float3 target,
+            float3 facadeNormal, out float3 point, out float3 normal)
+        {
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            bool found = BuildingSurfaceProbe.TryFindFacadePoint(entityManager, building, target, facadeNormal,
+                out point, out normal);
+            m_TriangleTicks += System.Diagnostics.Stopwatch.GetTimestamp() - started;
+            m_TriangleSearches++;
+            return found;
+        }
+
+        /// <summary>Where the last Apply spent its effort. Read by DecalDetailSystem when a
+        /// placement was slow.</summary>
+        public string DescribeLastPlacementCost()
+        {
+            double ticksPerMs = System.Diagnostics.Stopwatch.Frequency / 1000d;
+            return string.Format(
+                "{0} mark(s) from the surveyed wall, {1} ray fallback(s) taking {2:0.0} ms, "
+              + "{3} triangle search(es) taking {4:0.0} ms, {5} miss(es), wall survey {6}",
+                m_SurfaceHits, m_Raycasts, m_RaycastTicks / ticksPerMs,
+                m_TriangleSearches, m_TriangleTicks / ticksPerMs, m_SurfaceMisses,
+                m_SurfaceTemplateCacheHit ? "cached" : "done during this placement");
+        }
+
         private bool TryResolvePlacement(
             Entity building,
             in BuildingFacade facade,
             float u,
             float v,
+            ref Unity.Mathematics.Random rng,
+            out float3 position,
+            out quaternion rotation,
+            float maxVerticalError = float.MaxValue)
+        {
+            bool resolved = ResolvePlacement(building, facade, u, v, maxVerticalError, ref rng, out position, out rotation);
+
+            // The ray and triangle fallbacks look for the nearest surface in any direction; hold
+            // them to the same height limit as the surveyed pick.
+            if (resolved && maxVerticalError < float.MaxValue
+                && math.abs(position.y - facade.PointAt(u, v).y) > maxVerticalError + 0.5f)
+            {
+                m_SurfaceMisses++;
+                return false;
+            }
+
+            return resolved;
+        }
+
+        private bool ResolvePlacement(
+            Entity building,
+            in BuildingFacade facade,
+            float u,
+            float v,
+            float maxVerticalError,
             ref Unity.Mathematics.Random rng,
             out float3 position,
             out quaternion rotation)
@@ -988,7 +1064,7 @@ namespace SeenBetterDays.Rendering
 
             // Pick from the wall we already measured, rather than casting a fresh ray for every
             // mark. Same question, asked once per building instead of once per mark.
-            if (TryPickCollectedSurface(facade, planePoint, ref rng, out position, out rotation))
+            if (TryPickCollectedSurface(facade, planePoint, maxVerticalError, ref rng, out position, out rotation))
             {
                 m_SurfaceHits++;
                 m_SurfaceSides |= 1 << (int)facade.Side;
@@ -1004,7 +1080,7 @@ namespace SeenBetterDays.Rendering
             float3 normal;
 
             if (building != Entity.Null
-                && BuildingSurfaceProbe.TryHit(
+                && TimedTryHit(
                        m_EntityManager, building, origin, -facade.Normal, standOff * 2f, out hit, out normal))
             {
                 float3 up = InvertProjection ? -normal : normal;
@@ -1032,7 +1108,7 @@ namespace SeenBetterDays.Rendering
             // the building mesh itself. This is still an exact surface placement; unlike the old
             // bounding-box fallback it cannot float in front of the building.
             if (building != Entity.Null
-                && BuildingSurfaceProbe.TryFindFacadePoint(
+                && TimedTryFindFacadePoint(
                        m_EntityManager, building, planePoint, facade.Normal, out hit, out normal))
             {
                 float3 up = InvertProjection ? -normal : normal;
@@ -1059,13 +1135,13 @@ namespace SeenBetterDays.Rendering
         /// a mark belongs, including the bias towards the bottom of a wall. The measured surface
         /// supplies the truth about position; the rectangle still supplies the intent.
         ///
-        /// Sampled rather than searched exhaustively: a handful of random candidates, keeping the
-        /// closest, gives a mark that lands near the intended spot without walking thousands of
-        /// triangles per mark - which is the entire cost saving this is here for.
+        /// Searched exhaustively among the surveyed points - thousands of cheap comparisons, not
+        /// triangles, so the cost saving of the survey is kept.
         /// </summary>
         private bool TryPickCollectedSurface(
             in BuildingFacade facade,
             float3 target,
+            float maxVerticalError,
             ref Unity.Mathematics.Random rng,
             out float3 position,
             out quaternion rotation)
@@ -1085,27 +1161,38 @@ namespace SeenBetterDays.Rendering
                 return false;
             }
 
-            const int samples = 24;
+            // Every point, not a random handful. The best of 24 random samples was often 10-20 m
+            // from the intended spot on a tall facade, which put street-level graffiti half way
+            // up a tower. Compared in the prefab's own space, so each point costs a dot product
+            // and a distance rather than two rotations: the target and the facade normal are
+            // brought into that space once.
+            quaternion inverse = math.inverse(m_SurfaceTransform.m_Rotation);
+            float3 localTarget = math.mul(inverse, target - m_SurfaceTransform.m_Position);
+            float3 localNormal = math.mul(inverse, facade.Normal);
 
             int best = -1;
             float bestDistance = float.MaxValue;
 
-            for (int i = 0; i < samples; i++)
+            for (int candidate = 0; candidate < surface.Count; candidate++)
             {
-                int candidate = rng.NextInt(0, surface.Count);
                 BuildingSurfaceProbe.SurfacePoint point = surface[candidate];
-                float3 worldNormal = math.mul(m_SurfaceTransform.m_Rotation, point.m_Normal);
 
                 // Facing roughly the same way as this side of the building. Loose, so that
                 // chamfers, bays and angled wings stay eligible.
-                if (math.dot(worldNormal, facade.Normal) < 0.4f)
+                if (math.dot(point.m_Normal, localNormal) < 0.4f)
                 {
                     continue;
                 }
 
-                float3 worldPosition = m_SurfaceTransform.m_Position
-                                     + math.mul(m_SurfaceTransform.m_Rotation, point.m_Position);
-                float distance = math.distancesq(worldPosition, target);
+                // Graffiti has to stay at the height it was given - within reach of the street
+                // or just under the roof. A wall that has no surface near that height gets no
+                // graffiti rather than one moved to wherever there is wall.
+                if (math.abs(point.m_Position.y - localTarget.y) > maxVerticalError)
+                {
+                    continue;
+                }
+
+                float distance = math.distancesq(point.m_Position, localTarget);
                 if (distance < bestDistance)
                 {
                     bestDistance = distance;
@@ -1703,7 +1790,8 @@ namespace SeenBetterDays.Rendering
 
             float3 position;
             quaternion rotation;
-            if (!TryResolvePlacement(building, facade, u, v, ref rng, out position, out rotation))
+            if (!TryResolvePlacement(building, facade, u, v, ref rng, out position, out rotation,
+                    family == OverlayFamily.Graffiti ? GraffitiVerticalTolerance : float.MaxValue))
             {
                 return false;
             }
@@ -1815,6 +1903,9 @@ namespace SeenBetterDays.Rendering
         /// below the top. The street-facing example is always at street level. Returns the
         /// vertical position as the facade fraction the placement code works in.
         /// </summary>
+        /// <summary>How far, in metres, graffiti may land above or below the height it was given.</summary>
+        private const float GraffitiVerticalTolerance = 2f;
+
         private static float GraffitiHeight(
             float facadeHeight,
             float decalHeight,

@@ -100,6 +100,17 @@ namespace SeenBetterDays.Systems
         private int m_ApplyFailed;
         private int m_SuppressedRetries;
         private int m_AwaitingSurvey;
+
+        /// <summary>
+        /// A placement or a pass slower than this gets a line of its own in the log, saying
+        /// which building and where the time went. Kept to <see cref="MaxSlowReports"/> a
+        /// session: the point is to find the cause, not to fill the log.
+        /// </summary>
+        private const double SlowMilliseconds = 10d;
+        private const int MaxSlowReports = 20;
+        private int m_SlowReports;
+        private bool m_SlowPlacementThisPass;
+        private Game.Prefabs.PrefabSystem m_PrefabSystem;
         private string m_LastApplyFailure;
         private int m_Passes;
         private int m_TimedPasses;
@@ -126,6 +137,7 @@ namespace SeenBetterDays.Systems
             m_CameraSystem = World.GetOrCreateSystemManaged<Game.Rendering.CameraUpdateSystem>();
             m_SaveGameSystem = World.GetOrCreateSystemManaged<Game.Serialization.SaveGameSystem>();
             m_Harness = World.GetOrCreateSystemManaged<BuildingOverlayTestSystem>();
+            m_PrefabSystem = World.GetOrCreateSystemManaged<Game.Prefabs.PrefabSystem>();
 
             m_GrowableQuery = GetEntityQuery(new EntityQueryDesc
             {
@@ -216,7 +228,10 @@ namespace SeenBetterDays.Systems
             float3 eye = m_CameraSystem.activeCameraController.pivot;
 
             long passStarted = Stopwatch.GetTimestamp();
+            m_SlowPlacementThisPass = false;
+            int removedBefore = m_Removed;
             NativeArray<Entity> buildings = m_GrowableQuery.ToEntityArray(Allocator.TempJob);
+            int growablesInScan = buildings.Length;
             try
             {
                 if (buildings.Length == 0)
@@ -288,6 +303,17 @@ namespace SeenBetterDays.Systems
                 m_TimedPasses++;
                 m_WorkMilliseconds += elapsedMilliseconds;
                 m_MaxPassMilliseconds = math.max(m_MaxPassMilliseconds, elapsedMilliseconds);
+
+                // A slow pass that no slow placement explains: say what else it did.
+                if (elapsedMilliseconds >= SlowMilliseconds && !m_SlowPlacementThisPass
+                    && m_SlowReports < MaxSlowReports)
+                {
+                    m_SlowReports++;
+                    Mod.Log.Info("Seen Better Days: slow detail pass - "
+                               + elapsedMilliseconds.ToString("0.0") + " ms with no slow placement; "
+                               + (m_Removed - removedBefore) + " building(s) cleared, "
+                               + growablesInScan + " growables in the scan.");
+                }
             }
 
             if (++m_Passes >= StatusReportPasses)
@@ -501,7 +527,30 @@ namespace SeenBetterDays.Systems
             int placed;
             string failure;
             attemptedPlacement = true;
-            if (!renderer.Apply(building, profile, out placed, out failure))
+            long applyStarted = Stopwatch.GetTimestamp();
+            bool applied = renderer.Apply(building, profile, out placed, out failure);
+            double applyMs = (Stopwatch.GetTimestamp() - applyStarted) * 1000d / Stopwatch.Frequency;
+            if (applyMs >= SlowMilliseconds && m_SlowReports < MaxSlowReports)
+            {
+                m_SlowReports++;
+                m_SlowPlacementThisPass = true;
+                string prefabName = "?";
+                try
+                {
+                    prefabName = m_PrefabSystem.GetPrefabName(prefab);
+                }
+                catch
+                {
+                    // Only the name is lost; the timing still says what it needs to.
+                }
+
+                Mod.Log.Info("Seen Better Days: slow placement - " + applyMs.ToString("0.0")
+                           + " ms on building " + building.Index + " (" + prefabName + ", "
+                           + profile.State + ", " + placed + " placed): "
+                           + renderer.DescribeLastPlacementCost() + ".");
+            }
+
+            if (!applied)
             {
                 m_ApplyFailed++;
                 m_LastApplyFailure = failure;
