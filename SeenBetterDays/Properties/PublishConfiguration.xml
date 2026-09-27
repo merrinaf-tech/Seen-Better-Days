@@ -10,12 +10,13 @@
 	  So: this file is the single source of truth. If you add a link, a tag or a dependency on the
 	  website, copy it back in here before the next publish, or the next publish deletes it.
 
-	  No ModId yet: the first upload uses the Publish command, which assigns one. Write it here
-	  straight away; from then on Publish is refused and NewVersion / Update are the commands.
+	  Published as 160929 on 2026-09-27. From now on NewVersion / Update are the commands.
 
 	  The decal packs are deliberately NOT declared as dependencies. Every one of them is optional:
 	  the mod draws from whichever are installed, and the colour layer works with none.
 	-->
+
+	<ModId Value="160929" />
 
 	<DisplayName Value="Seen Better Days" />
 	<ShortDescription Value="Growable buildings look the way their circumstances are: cared for, worn or neglected, each one on its own." />
@@ -23,14 +24,14 @@
 	<LongDescription>
 # Seen Better Days
 
-Every building in the same street, looking exactly the same. Not any more.
+*"It was better when it was getting worse"* (cit. Caparezza)
 
 Seen Better Days makes growable buildings reflect how they are doing. A building's look follows its real circumstances - its condition, the services it gets, whether it is abandoned, its level and how its street compares with the rest of your city. Nothing ages on a timer: a building whose situation improves cleans up again on its own.
 
 ## What you get
 
 - **Colour, city-wide.** Each building gets its own gentle darkening and fading, so two identical towers side by side no longer look like copies. Readable at any distance and light on performance.
-- **Detail, up close.** Near the camera, weathered buildings pick up stains, cracks, graffiti, rubbish and fallen leaves, placed on the real walls. Move away and they go again.
+- **Detail, up close.** Near the camera, weathered buildings pick up stains, cracks, moss, rust, graffiti, rubbish and fallen leaves, placed on the real walls. Move away and they go again.
 - **Five states** - Maintained, Aged, Worn, Neglected and Decayed. A well-off building stays Maintained, however old it is.
 
 ## Decal packs - all optional
@@ -68,6 +69,13 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 	</LongDescription>
 
 	<Thumbnail Value="Properties/Thumbnail.png" />
+
+	<!-- Once declared here this file governs the screenshots: remove a line and the next
+	     publish removes the picture. -->
+	<Screenshot Value="Properties/Screenshots/sbd-01.jpg" />
+	<Screenshot Value="Properties/Screenshots/sbd-02.jpg" />
+	<Screenshot Value="Properties/Screenshots/sbd-03.jpg" />
+	<Screenshot Value="Properties/Screenshots/sbd-04.jpg" />
 
 	<Tag Value="Code Mod" />
 
