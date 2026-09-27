@@ -111,7 +111,7 @@ namespace SeenBetterDays.Data
         /// actually show.
         ///
         /// Each visual state introduces new readable kinds of damage: Aged has cracks, Worn adds
-        /// dirt, moss, rust and small tags, Neglected adds full street art, posters and heavy
+        /// dirt, moss, rust (industry has rust from Aged) and small tags, Neglected adds full street art, posters and heavy
         /// plaster damage (decal minimum states, see DecalPrefabInfo.MinState), and Decayed adds
         /// stains. Category weights still
         /// vary the amount, while the seed moves individual buildings off the average.
@@ -160,7 +160,9 @@ namespace SeenBetterDays.Data
             if (state < VisualState.Aged) crack = 0f;
             if (state < VisualState.Worn) graffiti = 0f;
             if (state < VisualState.Worn) moss = 0f;
-            if (state < VisualState.Worn) rust = 0f;
+            // Industry rusts early: from Aged, growing with the weathering like every family. Other
+            // buildings wait for Worn.
+            if (state < (category == BuildingCategory.Industrial ? VisualState.Aged : VisualState.Worn)) rust = 0f;
 
             return new BuildingVisualProfile
             {

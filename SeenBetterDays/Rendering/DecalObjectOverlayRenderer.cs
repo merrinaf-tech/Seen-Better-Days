@@ -1697,13 +1697,9 @@ namespace SeenBetterDays.Rendering
             float marginV = math.min(0.5f, decal.Size.z * 0.5f / math.max(facade.Height, 0.01f));
             float u = math.lerp(marginU, 1f - marginU, rng.NextFloat());
 
-            float verticalPosition = preferLowerGraffiti && family == OverlayFamily.Graffiti
-                ? math.square(rng.NextFloat()) * 0.32f
-                : SampleVerticalPosition(family, ref rng);
-            float v = math.lerp(
-                marginV,
-                1f - marginV,
-                verticalPosition);
+            float v = family == OverlayFamily.Graffiti
+                ? GraffitiHeight(facade.Height, decal.Size.z, preferLowerGraffiti, marginV, ref rng)
+                : math.lerp(marginV, 1f - marginV, SampleVerticalPosition(family, ref rng));
 
             float3 position;
             quaternion rotation;
@@ -1809,12 +1805,38 @@ namespace SeenBetterDays.Rendering
         }
 
         /// <summary>
+        /// Where graffiti goes up a wall, in metres rather than as a share of the facade.
+        ///
+        /// It used to be a fraction of the facade height, biased to the edges - on a 25 m block
+        /// "near the bottom" still meant the second or third floor, out of anybody's reach. Real
+        /// graffiti is either within arm's reach of the pavement or just under the roofline,
+        /// painted from the roof. So: most pieces sit with their lower edge 0.2-1.2 m above the
+        /// ground (a large mural starts at the ground), the rest with their upper edge 0.3-1.5 m
+        /// below the top. The street-facing example is always at street level. Returns the
+        /// vertical position as the facade fraction the placement code works in.
+        /// </summary>
+        private static float GraffitiHeight(
+            float facadeHeight,
+            float decalHeight,
+            bool streetLevelOnly,
+            float marginV,
+            ref Unity.Mathematics.Random rng)
+        {
+            float height = math.max(facadeHeight, 0.01f);
+            float half = decalHeight * 0.5f;
+
+            float centre = streetLevelOnly || rng.NextFloat() < 0.7f
+                ? half + math.lerp(0.2f, 1.2f, rng.NextFloat())
+                : height - half - math.lerp(0.3f, 1.5f, rng.NextFloat());
+
+            return math.clamp(centre / height, marginV, 1f - marginV);
+        }
+
+        /// <summary>
         /// Chooses the height of a mark within the usable facade rectangle.
         ///
         /// Ordinary weathering accumulates near the base, so its uniform sample is squared.
-        /// Graffiti follows a U-shaped distribution instead: half starts from the bottom edge,
-        /// half from the top, and the squared distance makes both edges more likely than the
-        /// centre without making the middle impossible.
+        /// Graffiti does not come through here any more - see <see cref="GraffitiHeight"/>.
         /// </summary>
         private static float SampleVerticalPosition(
             OverlayFamily family,
