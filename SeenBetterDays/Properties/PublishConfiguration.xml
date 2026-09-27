@@ -31,7 +31,7 @@ Seen Better Days makes growable buildings reflect how they are doing. A building
 ## What you get
 
 - **Colour, city-wide.** Each building gets its own gentle darkening and fading, so two identical towers side by side no longer look like copies. Readable at any distance and light on performance.
-- **Detail, up close.** Near the camera, weathered buildings pick up stains, cracks, moss, rust, graffiti, rubbish and fallen leaves, placed on the walls. Each building gets its own random mix and layout, and keeps it: come back later and the same marks are in the same places. Move away and they go again.
+- **Detail, up close.** Near the camera, weathered buildings pick up stains, cracks, moss, rust, graffiti, rubbish and fallen leaves, scattered at random across the walls. Move away and they go again.
 - **Five states** - Maintained, Aged, Worn, Neglected and Decayed. A well-off building stays Maintained, however old it is.
 
 ## Decal packs - all optional
@@ -63,7 +63,7 @@ With the game's **Show Advanced** switch on: a tooltip explaining why a building
 
 ## Good to know
 
-This is an early version. Buildings already recoloured by Recolor or another mod are left alone. If something looks wrong, a comment with a screenshot helps a lot.
+This is an early version. Colours you set yourself, in the game or with Recolor, are kept: the mod weathers them instead of replacing them. If something looks wrong, a comment with a screenshot helps a lot.
 
 Free and open source under the MIT licence: [source on GitHub](https://github.com/merrinaf-tech/Seen-Better-Days).
 	</LongDescription>
