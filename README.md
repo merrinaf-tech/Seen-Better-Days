@@ -53,6 +53,27 @@ since their names carry no keyword; brick walls, rusty roofs and hazard stripes 
 | Show maintenance in the tooltip | Off | *Advanced.* How weathered a building is, and why. |
 | Set a building's state by hand | Off | *Advanced.* Ctrl+Alt+F1-F5 hold the selected building at a state, F6 releases it. |
 | Developer shortcuts | Off | *Advanced.* The Ctrl+Alt keys used to develop and tune the mod. |
+| Design tools | Off | *Advanced.* Design mode for hand-made designs: Ctrl+Alt+M on a selected building. |
+| Designer name | - | *Advanced, with Design tools.* Written into exported designs and shown on hover. Asked once at the first export; empty stays anonymous. |
+
+## Hand-made designs
+
+A design is the decals placed by hand on one building model for one state, stored as a
+`design.json` of decal names and building-relative transforms. A building uses a design when one
+exists for its model and state and every decal in it is installed; otherwise it gets the random
+placement. Designs are filed by model - the set of meshes a prefab uses - so levels that share a
+model share designs.
+
+- **Shipped designs** live in `SeenBetterDays/ShippedDesigns/<building>/<design>/design.json` and
+  are deployed to the mod's `Designs` folder.
+- **A player's designs** are exported to `ModsData/SeenBetterDays/Designs` and used in their city
+  at once. A player's copy of a design that also ships with the mod counts once.
+- A design whose pack is installed but no longer has one of its decals is reported in the log as
+  obsolete. One whose pack or building is not installed waits quietly.
+- Decals scaled with Extra Detailing Tools are recorded but not used yet.
+
+The code is in `SeenBetterDays/Designs` and `SeenBetterDays/Systems/DesignStudioSystem.cs`; the
+design panel is part of `SeenBetterDays/UI/SeenBetterDays.mjs`.
 
 ## Building
 

@@ -25,7 +25,7 @@ namespace SeenBetterDays
     public class Mod : IMod
     {
         public const string Id = "SeenBetterDays";
-        public const string Version = "0.1.1";
+        public const string Version = "0.1.2";
 
         public static readonly ILog Log = LogManager.GetLogger(Id).SetShowsErrorsInUI(false);
 
@@ -40,6 +40,33 @@ namespace SeenBetterDays
         {
             Interlocked.Exchange(ref s_CityAppearanceResetRequested, 1);
             Log.Info("Seen Better Days: city appearance rebuild requested from the options page.");
+        }
+
+        /// <summary>
+        /// Designs shipped with the mod live in its own folder; the player's exports live under
+        /// ModsData, which survives updates and is where they can find them to send.
+        /// </summary>
+        private void SetUpDesignFolders()
+        {
+            string shipped = null;
+            try
+            {
+                ExecutableAsset asset;
+                if (GameManager.instance != null
+                    && GameManager.instance.modManager.TryGetExecutableAsset(this, out asset))
+                {
+                    shipped = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(asset.path), "Designs");
+                }
+            }
+            catch (System.Exception e)
+            {
+                Log.Warn("Seen Better Days: could not find the mod folder for shipped designs: " + e.Message);
+            }
+
+            string local = System.IO.Path.Combine(UnityEngine.Application.persistentDataPath,
+                                                  "ModsData", "SeenBetterDays", "Designs");
+            SeenBetterDays.Designs.DesignLibrary.Instance.SetFolders(shipped, local);
+            Log.Info("Seen Better Days: designs are read from " + (shipped ?? "(no mod folder)") + " and " + local + ".");
         }
 
         internal static bool ConsumeCityAppearanceResetRequest()
@@ -64,7 +91,10 @@ namespace SeenBetterDays
                    + ", detail=" + Settings.EnableDecalDetail
                    + ", intensity=" + Settings.Intensity + "%"
                    + ", tooltip=" + Settings.ShowMaintenanceTooltip
-                   + ", state keys=" + Settings.EnableStateKeys + ".");
+                   + ", state keys=" + Settings.EnableStateKeys
+                   + ", design tools=" + Settings.EnableDesignTools + ".");
+
+            SetUpDesignFolders();
 
             // Phase matters twice over, and both were learned the hard way in game.
             //
@@ -92,6 +122,10 @@ namespace SeenBetterDays
             // itself is written here with the rest of the weathering.
             updateSystem.UpdateAt<ColourTabBindingSystem>(SystemUpdatePhase.UIUpdate);
             updateSystem.UpdateBefore<ColourEditSystem>(SystemUpdatePhase.ModificationEnd);
+
+            // Design mode: the panel's bindings in the UI phase, the work with the rest.
+            updateSystem.UpdateAt<DesignStudioUISystem>(SystemUpdatePhase.UIUpdate);
+            updateSystem.UpdateBefore<DesignStudioSystem>(SystemUpdatePhase.ModificationEnd);
 
             // Weathering overlays are implementation details, not player-authored props. Let the
             // tool finish its raycast, then redirect an overlay selection to its owning building.

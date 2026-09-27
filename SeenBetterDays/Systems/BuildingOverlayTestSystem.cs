@@ -44,6 +44,7 @@ namespace SeenBetterDays.Systems
         private Game.Serialization.SaveGameSystem m_SaveGameSystem;
 
         private EntityQuery m_ObjectPrefabQuery;
+        private EntityQuery m_GrowablePrefabQuery;
         private EntityQuery m_GrowableQuery;
         private EntityQuery m_OverlayQuery;
         private EntityQuery m_OverriddenOverlayQuery;
@@ -93,6 +94,18 @@ namespace SeenBetterDays.Systems
                 ComponentType.ReadOnly<PrefabData>(),
                 ComponentType.ReadOnly<ObjectData>(),
                 ComponentType.ReadOnly<SubMesh>());
+
+            // Growable building prefabs, for the census the design project is sized from.
+            m_GrowablePrefabQuery = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[]
+                {
+                    ComponentType.ReadOnly<PrefabData>(),
+                    ComponentType.ReadOnly<BuildingData>(),
+                    ComponentType.ReadOnly<SpawnableBuildingData>(),
+                },
+                None = new[] { ComponentType.ReadOnly<SignatureBuildingData>() },
+            });
 
             m_GrowableQuery = GetEntityQuery(new EntityQueryDesc
             {
@@ -270,6 +283,12 @@ namespace SeenBetterDays.Systems
         {
             m_Catalog.Rebuild(EntityManager, m_PrefabSystem, m_ObjectPrefabQuery);
             m_CatalogueBuilt = true;
+
+            // Designs name their decals, so they can only be checked against what is installed
+            // once the catalogue exists.
+            SeenBetterDays.Designs.BuildingCensus census = SeenBetterDays.Designs.BuildingCensus.Take(
+                EntityManager, m_PrefabSystem, m_GrowablePrefabQuery, Mod.Log);
+            SeenBetterDays.Designs.DesignLibrary.Instance.Reload(m_Catalog, census, Mod.Log);
 
             Mod.Log.Info("Seen Better Days: " + m_Catalog.Describe(24));
 
@@ -1280,6 +1299,12 @@ namespace SeenBetterDays.Systems
         public DecalObjectOverlayRenderer DecalRenderer
         {
             get { return m_Renderer; }
+        }
+
+        /// <summary>The decal catalogue once it has been built for this city, otherwise null.</summary>
+        public DecalPrefabCatalog Catalog
+        {
+            get { return m_CatalogueBuilt ? m_Catalog : null; }
         }
 
         private void ApplyDecalsToTarget()

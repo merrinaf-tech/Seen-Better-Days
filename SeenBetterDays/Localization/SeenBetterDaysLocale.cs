@@ -113,6 +113,29 @@ namespace SeenBetterDays.Localization
                   + "can repaint buildings on purpose, so leave this off unless you know you "
                   + "need it."
                 },
+                {
+                    m_Settings.GetOptionLabelLocaleID(nameof(SeenBetterDaysSettings.EnableDesignTools)),
+                    "Design tools"
+                },
+                {
+                    m_Settings.GetOptionDescLocaleID(nameof(SeenBetterDaysSettings.EnableDesignTools)),
+                    "For making hand-made decal designs. Select a building and press Ctrl+Alt+M: it "
+                  + "becomes a blank canvas. Decorate it with Anarchy and Extra Detailing Tools, "
+                  + "then export it from the panel for the state you choose. Designs are saved in "
+                  + "ModsData/SeenBetterDays/Designs with a screenshot, and used in your city "
+                  + "straight away."
+                },
+                {
+                    m_Settings.GetOptionLabelLocaleID(nameof(SeenBetterDaysSettings.DesignerName)),
+                    "Designer name"
+                },
+                {
+                    m_Settings.GetOptionDescLocaleID(nameof(SeenBetterDaysSettings.DesignerName)),
+                    "Your name as it should appear on the designs you export, and on hover over "
+                  + "buildings that use them. It is written into each design and its folder name, "
+                  + "and stays with the design if it ships with the mod. Leave it empty to stay "
+                  + "anonymous."
+                },
             };
         }
 

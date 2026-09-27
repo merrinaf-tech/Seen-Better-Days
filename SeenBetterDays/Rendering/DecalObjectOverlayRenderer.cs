@@ -74,6 +74,9 @@ namespace SeenBetterDays.Rendering
         private sealed class OverlayRecord
         {
             public BuildingVisualProfile Profile;
+
+            /// <summary>The hand-made design placed, or null for random placement.</summary>
+            public SeenBetterDays.Designs.DesignLibrary.Resolved Design;
             public readonly List<Entity> Elements = new List<Entity>(MaxPerBuilding);
         }
 
@@ -272,6 +275,7 @@ namespace SeenBetterDays.Rendering
             m_RaycastTicks = 0;
             m_TriangleSearches = 0;
             m_TriangleTicks = 0;
+            m_SpawnTicks = 0;
             m_PlannedFacadeMask = 0;
             m_FacadeSequenceStep = 0;
             m_FrontMarkCount = 0;
@@ -328,6 +332,133 @@ namespace SeenBetterDays.Rendering
             placed = record.Elements.Count;
             return true;
         }
+
+        /// <summary>
+        /// Places a hand-made design: its decals at their recorded positions, relative to the
+        /// building, with no wall survey and no search. Replaces whatever the building had.
+        /// </summary>
+        public bool ApplyDesign(
+            Entity building,
+            in BuildingVisualProfile profile,
+            SeenBetterDays.Designs.DesignLibrary.Resolved design,
+            out int placed,
+            out string failureReason)
+        {
+            placed = 0;
+            failureReason = null;
+            m_SpawnTicks = 0;
+            m_SurfaceTemplateCacheHit = true;
+            m_SurfaceHits = 0;
+            m_Raycasts = 0;
+            m_RaycastTicks = 0;
+            m_TriangleSearches = 0;
+            m_TriangleTicks = 0;
+            m_SurfaceMisses = 0;
+            LastDesign = design.Name;
+
+            if (!m_EntityManager.HasComponent<Transform>(building))
+            {
+                failureReason = "building has no transform";
+                return false;
+            }
+
+            Transform transform = m_EntityManager.GetComponentData<Transform>(building);
+            m_Pending.Clear();
+            for (int i = 0; i < design.Prefabs.Length; i++)
+            {
+                m_Pending.Add(new PendingElement
+                {
+                    Prefab = design.Prefabs[i],
+                    Position = transform.m_Position + math.mul(transform.m_Rotation, design.Positions[i]),
+                    Rotation = math.mul(transform.m_Rotation, design.Rotations[i]),
+                    Family = design.Families[i],
+                    FacadeIndex = 0,
+                });
+            }
+
+            Remove(building);
+
+            OverlayRecord record = new OverlayRecord { Profile = profile, Design = design };
+            SpawnPending(building, record);
+            m_Pending.Clear();
+
+            if (record.Elements.Count == 0)
+            {
+                failureReason = "the command buffer produced no overlay entities";
+                return false;
+            }
+
+            m_Records[building] = record;
+            placed = record.Elements.Count;
+            return true;
+        }
+
+        /// <summary>
+        /// Places a design's decals as ordinary objects that belong to the player - not tagged as
+        /// this mod's overlays - so they can be edited with the usual tools and exported again.
+        /// Used by design mode to start a new design from an existing one.
+        /// </summary>
+        public int SpawnAsPlacedObjects(Entity building, SeenBetterDays.Designs.DesignLibrary.Resolved design)
+        {
+            if (!m_EntityManager.HasComponent<Transform>(building))
+            {
+                return 0;
+            }
+
+            Transform transform = m_EntityManager.GetComponentData<Transform>(building);
+            EntityCommandBuffer commandBuffer = new EntityCommandBuffer(Allocator.Temp);
+            try
+            {
+                for (int i = 0; i < design.Prefabs.Length; i++)
+                {
+                    Entity prefab = design.Prefabs[i];
+                    ObjectData objectData = m_EntityManager.GetComponentData<ObjectData>(prefab);
+                    RuntimeInitialization initialization = GetRuntimeInitialization(prefab, objectData);
+
+                    Entity element = commandBuffer.CreateEntity(objectData.m_Archetype);
+                    commandBuffer.SetComponent(element, new PrefabRef(prefab));
+                    commandBuffer.SetComponent(element, new Transform(
+                        transform.m_Position + math.mul(transform.m_Rotation, design.Positions[i]),
+                        math.mul(transform.m_Rotation, design.Rotations[i])));
+
+                    if ((initialization & RuntimeInitialization.DisableCustomMeshColor) != 0)
+                    {
+                        commandBuffer.SetComponentEnabled<CustomMeshColor>(element, false);
+                    }
+
+                    if ((initialization & RuntimeInitialization.SetPseudoRandomSeed) != 0)
+                    {
+                        uint mixed = (uint)building.Index * 0x9E3779B9u ^ (uint)prefab.Index * 0x85EBCA6Bu ^ (uint)(i + 1);
+                        commandBuffer.SetComponent(element, new PseudoRandomSeed((ushort)(mixed ^ (mixed >> 16))));
+                    }
+                }
+
+                commandBuffer.Playback(m_EntityManager);
+            }
+            finally
+            {
+                commandBuffer.Dispose();
+            }
+
+            return design.Prefabs.Length;
+        }
+
+        /// <summary>Whether the decals on this building are a hand-made design, and whose.</summary>
+        public bool TryGetDesign(Entity building, out string author)
+        {
+            author = null;
+            OverlayRecord record;
+            if (!m_Records.TryGetValue(building, out record) || record.Design == null)
+            {
+                return false;
+            }
+
+            author = record.Design.Author;
+            return true;
+        }
+
+        /// <summary>The design placed by the last ApplyDesign, for the log.</summary>
+        public string LastDesign { get; private set; }
 
         private bool HasFittingAutomaticDecal(in BuildingVisualProfile profile)
         {
@@ -986,6 +1117,16 @@ namespace SeenBetterDays.Rendering
 
         private int m_Raycasts;
         private long m_RaycastTicks;
+
+        /// <summary>Time spent creating the decal entities, as against finding where they go.
+        /// Measured for both random and designed placement, so the two can be compared.</summary>
+        private long m_SpawnTicks;
+
+        /// <summary>Milliseconds the last placement spent creating its decal entities.</summary>
+        public double LastSpawnMilliseconds
+        {
+            get { return m_SpawnTicks * 1000d / System.Diagnostics.Stopwatch.Frequency; }
+        }
         private int m_TriangleSearches;
         private long m_TriangleTicks;
 
@@ -1018,10 +1159,12 @@ namespace SeenBetterDays.Rendering
             double ticksPerMs = System.Diagnostics.Stopwatch.Frequency / 1000d;
             return string.Format(
                 "{0} mark(s) from the surveyed wall, {1} ray fallback(s) taking {2:0.0} ms, "
-              + "{3} triangle search(es) taking {4:0.0} ms, {5} miss(es), wall survey {6}",
+              + "{3} triangle search(es) taking {4:0.0} ms, {5} miss(es), wall survey {6}, "
+              + "creating the decals {7:0.0} ms",
                 m_SurfaceHits, m_Raycasts, m_RaycastTicks / ticksPerMs,
                 m_TriangleSearches, m_TriangleTicks / ticksPerMs, m_SurfaceMisses,
-                m_SurfaceTemplateCacheHit ? "cached" : "done during this placement");
+                m_SurfaceTemplateCacheHit ? "cached" : "done during this placement",
+                m_SpawnTicks / ticksPerMs);
         }
 
         private bool TryResolvePlacement(
@@ -1958,6 +2101,19 @@ namespace SeenBetterDays.Rendering
         /// them back out of the overlay query by the building they tagged themselves with.
         /// </summary>
         private void SpawnPending(Entity building, OverlayRecord record)
+        {
+            long spawnStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            try
+            {
+                SpawnPendingUntimed(building, record);
+            }
+            finally
+            {
+                m_SpawnTicks += System.Diagnostics.Stopwatch.GetTimestamp() - spawnStarted;
+            }
+        }
+
+        private void SpawnPendingUntimed(Entity building, OverlayRecord record)
         {
             EntityCommandBuffer commandBuffer = new EntityCommandBuffer(Allocator.Temp);
             try

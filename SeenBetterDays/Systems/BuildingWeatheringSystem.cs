@@ -396,6 +396,12 @@ namespace SeenBetterDays.Systems
                 return;
             }
 
+            // A blank canvas while it is decorated in design mode.
+            if (building == DesignCanvas.Building)
+            {
+                return;
+            }
+
             string reason;
             Entity prefab;
             int level;
@@ -789,7 +795,12 @@ namespace SeenBetterDays.Systems
             }
             else if (decalRenderer != null && decalRenderer.TryCountPlaced(building, out placed, out placedFamilies))
             {
-                decals = string.Format("decals: {0} - {1}", placed, placedFamilies);
+                // A hand-made design credits its designer, when they gave a name.
+                string author;
+                decals = decalRenderer.TryGetDesign(building, out author)
+                    ? string.Format("decals: {0} - hand-made design{1}", placed,
+                                    string.IsNullOrEmpty(author) ? string.Empty : " by " + author)
+                    : string.Format("decals: {0} - {1}", placed, placedFamilies);
             }
             else if (visual == VisualState.Maintained)
             {
@@ -1259,6 +1270,44 @@ namespace SeenBetterDays.Systems
         public int SuspendForSave()
         {
             return m_Renderer.SuspendForSave();
+        }
+
+        /// <summary>Takes this mod's colour off a building about to be decorated in design mode.
+        /// <see cref="Process"/> leaves it alone until design mode ends.</summary>
+        public void ClearForDesign(Entity building)
+        {
+            m_Renderer.Remove(building);
+        }
+
+        /// <summary>Weathers one building again now rather than when the sweep reaches it. Used
+        /// when design mode hands a building back.</summary>
+        public void RefreshNow(Entity building)
+        {
+            if (!EntityManager.Exists(building) || SaveMutationGate.IsBlocked(m_SaveGameSystem))
+            {
+                return;
+            }
+
+            // A building held at a state by hand is skipped by Process; put its held look back.
+            if (m_Pinned.Contains(building) && EntityManager.HasComponent<WeatheringState>(building))
+            {
+                WeatheringState held = EntityManager.GetComponentData<WeatheringState>(building);
+                Entity prefab;
+                int level;
+                string reason;
+                BuildingCategory category = BuildingClassifier.Classify(EntityManager, building, out prefab, out level, out reason);
+                if (category.IsEligible() && held.m_Weathering > 0.005f)
+                {
+                    int placed;
+                    string failure;
+                    m_Renderer.Apply(building, BuildingVisualProfile.FromWeathering(category, held.m_Weathering, held.m_Seed),
+                                     out placed, out failure);
+                }
+
+                return;
+            }
+
+            Process(building);
         }
 
         /// <summary>The building open in the game's colour panel, or Entity.Null.</summary>

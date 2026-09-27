@@ -326,6 +326,15 @@ namespace SeenBetterDays.Rendering
         private readonly List<DecalPrefabInfo> m_AutoPool = new List<DecalPrefabInfo>();
         private readonly Dictionary<Entity, DecalPrefabInfo> m_ByPrefab = new Dictionary<Entity, DecalPrefabInfo>();
 
+        /// <summary>Every decal by its prefab name. Hand-made designs refer to decals by name,
+        /// because prefab entities change from one session to the next.</summary>
+        private readonly Dictionary<string, DecalPrefabInfo> m_ByName = new Dictionary<string, DecalPrefabInfo>();
+
+        /// <summary>Whether any decal of each whitelisted pack is installed, counting every decal
+        /// of the pack rather than only those the random layer uses. Tells a design whose pack is
+        /// missing apart from one whose pack is there but no longer has the decal.</summary>
+        private readonly bool[] m_PackPresent = new bool[s_ApprovedAutomaticSources.Length];
+
         /// <summary>Every decal object prefab found, sorted by name.</summary>
         public List<DecalPrefabInfo> All
         {
@@ -577,13 +586,55 @@ namespace SeenBetterDays.Rendering
             return m_ByPrefab.TryGetValue(prefabEntity, out info);
         }
 
+        public bool TryGetByName(string name, out DecalPrefabInfo info)
+        {
+            info = null;
+            return !string.IsNullOrEmpty(name) && m_ByName.TryGetValue(name, out info);
+        }
+
+        /// <summary>The whitelisted pack a decal belongs to, by its name; -1 when it is not on the
+        /// whitelist. Every decal of a whitelisted pack counts, including those the random layer
+        /// leaves out.</summary>
+        public static int PackOf(string decalName)
+        {
+            if (string.IsNullOrEmpty(decalName))
+            {
+                return -1;
+            }
+
+            string normalised = Normalise(decalName);
+            for (int i = 0; i < s_ApprovedAutomaticSources.Length; i++)
+            {
+                if (normalised.StartsWith(Normalise(s_ApprovedAutomaticSources[i].Prefix), StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        public static string PackName(int pack)
+        {
+            return pack >= 0 && pack < s_ApprovedAutomaticSources.Length
+                ? s_ApprovedAutomaticSources[pack].Prefix
+                : null;
+        }
+
+        public bool IsPackPresent(int pack)
+        {
+            return pack >= 0 && pack < m_PackPresent.Length && m_PackPresent[pack];
+        }
+
         public void Rebuild(EntityManager entityManager, PrefabSystem prefabSystem, EntityQuery objectPrefabQuery)
         {
             m_All.Clear();
             m_BuildingCapable.Clear();
             m_AutoPool.Clear();
             System.Array.Clear(m_SourceCounts, 0, m_SourceCounts.Length);
+            System.Array.Clear(m_PackPresent, 0, m_PackPresent.Length);
             m_ByPrefab.Clear();
+            m_ByName.Clear();
             Largest = null;
             TotalObjectPrefabsScanned = 0;
 
@@ -602,6 +653,15 @@ namespace SeenBetterDays.Rendering
 
                     m_All.Add(info);
                     m_ByPrefab[info.PrefabEntity] = info;
+                    if (info.Name != null)
+                    {
+                        m_ByName[info.Name] = info;
+                        int pack = PackOf(info.Name);
+                        if (pack >= 0)
+                        {
+                            m_PackPresent[pack] = true;
+                        }
+                    }
 
                     if (!info.AffectsBuildings)
                     {

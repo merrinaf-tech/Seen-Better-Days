@@ -109,6 +109,12 @@ namespace SeenBetterDays.Systems
         private const double SlowMilliseconds = 10d;
         private const int MaxSlowReports = 20;
         private int m_SlowReports;
+
+        /// <summary>Design placements get a timing line each, up to this many a session: the
+        /// pilot's question is what a design costs to place, against a random placement.</summary>
+        private const int MaxDesignReports = 30;
+        private int m_DesignReports;
+        private int m_DesignsPlaced;
         private bool m_SlowPlacementThisPass;
         private Game.Prefabs.PrefabSystem m_PrefabSystem;
         private string m_LastApplyFailure;
@@ -257,6 +263,17 @@ namespace SeenBetterDays.Systems
 
                     bool has = renderer.Has(building);
 
+                    // Being decorated by hand in design mode: none of ours on it.
+                    if (building == DesignCanvas.Building)
+                    {
+                        if (has)
+                        {
+                            renderer.RemoveIncludingUntracked(building);
+                        }
+
+                        continue;
+                    }
+
                     if (distance > FarRadius)
                     {
                         if (has)
@@ -319,7 +336,8 @@ namespace SeenBetterDays.Systems
             if (++m_Passes >= StatusReportPasses)
             {
                 Mod.Log.Info("Seen Better Days: decal detail layer - " + m_Built
-                           + " building(s) detailed from " + m_PlacementAttempts
+                           + " building(s) detailed (" + m_DesignsPlaced + " from a hand-made design) from "
+                           + m_PlacementAttempts
                            + " placement attempt(s), " + m_Removed
                            + " removed after leaving the radius, "
                            + renderer.TrackedBuildingCount + " currently detailed, "
@@ -347,6 +365,7 @@ namespace SeenBetterDays.Systems
                 m_Built = 0;
                 m_PlacementAttempts = 0;
                 m_Removed = 0;
+                m_DesignsPlaced = 0;
                 m_InRange = 0;
                 m_BelowThreshold = 0;
                 m_MeshNotReady = 0;
@@ -450,6 +469,11 @@ namespace SeenBetterDays.Systems
         {
             attemptedPlacement = false;
 
+            if (building == DesignCanvas.Building)
+            {
+                return false;
+            }
+
             if (!EntityManager.HasComponent<WeatheringState>(building))
             {
                 m_NoWeatheringState++;
@@ -514,10 +538,18 @@ namespace SeenBetterDays.Systems
                 m_RejectedPlacements.Remove(building);
             }
 
+            // A hand-made design for this building and state, when there is one whose decals are
+            // all installed. It needs no wall survey.
+            SeenBetterDays.Designs.DesignLibrary.Resolved design = null;
+            if (automaticPlacement)
+            {
+                SeenBetterDays.Designs.DesignLibrary.Instance.TryPick(prefab, profile.State, profile.Seed, out design);
+            }
+
             // The first building of a type needs its walls surveyed, which is the expensive part.
             // Ask for it and move on; FacadeSurveySystem does it in small slices, and this
             // building is detailed on a later pass. Not an attempt, and not a failure.
-            if (automaticPlacement && !renderer.HasSurfaceTemplate(building))
+            if (design == null && automaticPlacement && !renderer.HasSurfaceTemplate(building))
             {
                 renderer.RequestSurfaceTemplate(building);
                 m_AwaitingSurvey++;
@@ -528,8 +560,22 @@ namespace SeenBetterDays.Systems
             string failure;
             attemptedPlacement = true;
             long applyStarted = Stopwatch.GetTimestamp();
-            bool applied = renderer.Apply(building, profile, out placed, out failure);
+            bool applied = design != null
+                ? renderer.ApplyDesign(building, profile, design, out placed, out failure)
+                : renderer.Apply(building, profile, out placed, out failure);
             double applyMs = (Stopwatch.GetTimestamp() - applyStarted) * 1000d / Stopwatch.Frequency;
+            if (design != null && applied)
+            {
+                m_DesignsPlaced++;
+                if (m_DesignReports < MaxDesignReports)
+                {
+                    m_DesignReports++;
+                    Mod.Log.Info("Seen Better Days: design " + design.Name + " placed on building "
+                               + building.Index + " (" + profile.State + ", " + placed + " decals) in "
+                               + applyMs.ToString("0.00") + " ms, of which creating the decals "
+                               + renderer.LastSpawnMilliseconds.ToString("0.00") + " ms.");
+                }
+            }
             if (applyMs >= SlowMilliseconds && m_SlowReports < MaxSlowReports)
             {
                 m_SlowReports++;
@@ -547,7 +593,9 @@ namespace SeenBetterDays.Systems
                 Mod.Log.Info("Seen Better Days: slow placement - " + applyMs.ToString("0.0")
                            + " ms on building " + building.Index + " (" + prefabName + ", "
                            + profile.State + ", " + placed + " placed): "
-                           + renderer.DescribeLastPlacementCost() + ".");
+                           + (design != null ? "hand-made design " + design.Name + ", creating the decals "
+                                + renderer.LastSpawnMilliseconds.ToString("0.0") + " ms"
+                              : renderer.DescribeLastPlacementCost()) + ".");
             }
 
             if (!applied)

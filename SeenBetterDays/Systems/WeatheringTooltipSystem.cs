@@ -26,6 +26,8 @@ namespace SeenBetterDays.Systems
         private ToolRaycastSystem m_RaycastSystem;
         private BuildingWeatheringSystem m_Weathering;
         private StringTooltip m_Tooltip;
+        private StringTooltip m_CreditTooltip;
+        private BuildingOverlayTestSystem m_Overlays;
 
         [Preserve]
         protected override void OnCreate()
@@ -35,12 +37,14 @@ namespace SeenBetterDays.Systems
             m_RaycastSystem = World.GetOrCreateSystemManaged<ToolRaycastSystem>();
             m_Weathering = World.GetOrCreateSystemManaged<BuildingWeatheringSystem>();
             m_Tooltip = new StringTooltip { path = "seenBetterDays.maintenance" };
+            m_CreditTooltip = new StringTooltip { path = "seenBetterDays.designCredit" };
+            m_Overlays = World.GetOrCreateSystemManaged<BuildingOverlayTestSystem>();
         }
 
         [Preserve]
         protected override void OnUpdate()
         {
-            if (Mod.Settings == null || !Mod.Settings.ShowMaintenanceTooltip)
+            if (Mod.Settings == null)
             {
                 return;
             }
@@ -54,6 +58,13 @@ namespace SeenBetterDays.Systems
             Entity building = ResolveBuilding(result.m_Owner);
             if (building == Entity.Null)
             {
+                return;
+            }
+
+            // The maintenance tooltip already names the designer on its decals line.
+            if (!Mod.Settings.ShowMaintenanceTooltip)
+            {
+                ShowDesignCredit(building);
                 return;
             }
 
@@ -75,6 +86,23 @@ namespace SeenBetterDays.Systems
         /// because the cursor was over a shop sign would make the tooltip useless exactly where a
         /// player would point it.
         /// </summary>
+        /// <summary>
+        /// Credits the designer of a hand-made design on hover, for every player: the people who
+        /// make designs should be seen. Only when the design carries a name.
+        /// </summary>
+        private void ShowDesignCredit(Entity building)
+        {
+            string author;
+            Rendering.DecalObjectOverlayRenderer decals = m_Overlays != null ? m_Overlays.DecalRenderer : null;
+            if (decals == null || !decals.TryGetDesign(building, out author) || string.IsNullOrEmpty(author))
+            {
+                return;
+            }
+
+            m_CreditTooltip.value = "Decals designed by " + author;
+            AddMouseTooltip(m_CreditTooltip);
+        }
+
         private Entity ResolveBuilding(Entity hit)
         {
             for (int guard = 0; guard < 8 && hit != Entity.Null; guard++)

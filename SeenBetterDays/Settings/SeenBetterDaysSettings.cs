@@ -116,6 +116,34 @@ namespace SeenBetterDays.Settings
         [SettingsUIAdvanced]
         public bool EnableDeveloperShortcuts { get; set; }
 
+        /// <summary>
+        /// Design mode, for making hand-made decal designs: Ctrl+Alt+M on a selected building
+        /// turns it into a blank canvas, and a panel exports the decals placed on it for a chosen
+        /// state. Off by default and advanced: it is for people who design, not for playing.
+        /// </summary>
+        [SettingsUISection(MainSection, DeveloperGroup)]
+        [SettingsUIAdvanced]
+        public bool EnableDesignTools { get; set; }
+
+        /// <summary>Written into every design exported, and into its folder name, so a design
+        /// keeps its author when it is shipped with the mod.</summary>
+        [SettingsUISection(MainSection, DeveloperGroup)]
+        [SettingsUIAdvanced]
+        [SettingsUITextInput]
+        [SettingsUIHideByCondition(typeof(SeenBetterDaysSettings), nameof(IsDesignToolsOff))]
+        public string DesignerName { get; set; } = string.Empty;
+
+        /// <summary>Set once the designer has been asked for their name at their first export,
+        /// whatever they answered, so it is never asked again. The name itself stays editable
+        /// above.</summary>
+        [SettingsUIHidden]
+        public bool DesignerNameAsked { get; set; }
+
+        public bool IsDesignToolsOff()
+        {
+            return !EnableDesignTools;
+        }
+
         /// <summary>Used by the disable conditions above: everything else is meaningless with the
         /// mod switched off, and a page of live controls that do nothing is a lie.</summary>
         public bool IsWeatheringDisabled()
@@ -137,6 +165,9 @@ namespace SeenBetterDays.Settings
             ShowMaintenanceTooltip = false;
             EnableStateKeys = false;
             EnableDeveloperShortcuts = false;
+            EnableDesignTools = false;
+            DesignerName = string.Empty;
+            DesignerNameAsked = false;
         }
     }
 }

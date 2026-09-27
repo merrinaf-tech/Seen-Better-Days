@@ -9,9 +9,9 @@
 		<AssemblyName>SeenBetterDays</AssemblyName>
 		<RootNamespace>SeenBetterDays</RootNamespace>
 		<Product>SeenBetterDays</Product>
-		<Version>0.1.1</Version>
-		<AssemblyVersion>0.1.1.0</AssemblyVersion>
-		<FileVersion>0.1.1.0</FileVersion>
+		<Version>0.1.2</Version>
+		<AssemblyVersion>0.1.2.0</AssemblyVersion>
+		<FileVersion>0.1.2.0</FileVersion>
 
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<ProduceReferenceAssembly>false</ProduceReferenceAssembly>
@@ -69,6 +69,8 @@
 		<Reference Include="Unity.Burst"><HintPath>$(ManagedPath)\Unity.Burst.dll</HintPath><Private>false</Private></Reference>
 		<Reference Include="UnityEngine.CoreModule"><HintPath>$(ManagedPath)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
 		<Reference Include="Unity.InputSystem"><HintPath>$(ManagedPath)\Unity.InputSystem.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="Newtonsoft.Json"><HintPath>$(ManagedPath)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+		<Reference Include="UnityEngine.ScreenCaptureModule"><HintPath>$(ManagedPath)\UnityEngine.ScreenCaptureModule.dll</HintPath><Private>false</Private></Reference>
 		<!-- Only so the compiler can resolve members that mention Cinemachine types. -->
 		<Reference Include="Cinemachine"><HintPath>$(ManagedPath)\Cinemachine.dll</HintPath><Private>false</Private></Reference>
 	</ItemGroup>
@@ -100,6 +102,15 @@
 	-->
 	<Target Name="CopyUiModule" AfterTargets="RunModPostProcessor" BeforeTargets="DeployWIP">
 		<Copy SourceFiles="$(MSBuildProjectDirectory)/UI/SeenBetterDays.mjs" DestinationFolder="$(OutDir)" />
+
+		<!-- Hand-made designs shipped with the mod, ShippedDesigns/<building>/<design>/design.json,
+		     deployed as Designs/. Screenshots stay in the repository for review. -->
+		<ItemGroup>
+			<ShippedDesign Include="$(MSBuildProjectDirectory)/ShippedDesigns/**/design.json" />
+		</ItemGroup>
+		<Copy SourceFiles="@(ShippedDesign)"
+		      DestinationFiles="@(ShippedDesign->'$(OutDir)Designs/%(RecursiveDir)%(Filename)%(Extension)')"
+		      Condition="'@(ShippedDesign)' != ''" />
 	</Target>
 
 	<Target Name="RemoveSymbolsBeforeDeploy" AfterTargets="RunModPostProcessor" BeforeTargets="DeployWIP">
