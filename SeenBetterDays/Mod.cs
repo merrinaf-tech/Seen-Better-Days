@@ -88,6 +88,11 @@ namespace SeenBetterDays
             updateSystem.UpdateBefore<DecalDetailSystem>(SystemUpdatePhase.ModificationEnd);
             updateSystem.UpdateBefore<FacadeSurveySystem>(SystemUpdatePhase.ModificationEnd);
 
+            // Colour editing: the UI module reports the Customize tab from the UI phase; the colour
+            // itself is written here with the rest of the weathering.
+            updateSystem.UpdateAt<ColourTabBindingSystem>(SystemUpdatePhase.UIUpdate);
+            updateSystem.UpdateBefore<ColourEditSystem>(SystemUpdatePhase.ModificationEnd);
+
             // Weathering overlays are implementation details, not player-authored props. Let the
             // tool finish its raycast, then redirect an overlay selection to its owning building.
             updateSystem.UpdateAfter<WeatheringOverlaySelectionSystem>(SystemUpdatePhase.ToolUpdate);

@@ -51,6 +51,48 @@ namespace SeenBetterDays.Rendering
         private readonly Dictionary<Entity, ColorSet> m_SaveSuspended =
             new Dictionary<Entity, ColorSet>();
 
+        /// <summary>
+        /// Buildings whose baseline is a colour somebody chose - in the game's colour panel, with
+        /// Recolor, or with "apply to all similar" - rather than the prefab's own. That colour
+        /// lives in the same CustomMeshColor slot we write to, so taking the slot off, or saving
+        /// it switched off, would throw the player's choice away. These get it written back
+        /// instead.
+        /// </summary>
+        private readonly HashSet<Entity> m_AdoptedBasis = new HashSet<Entity>();
+
+        /// <summary>Adopted buildings put back to their clean colour, still switched on, while a
+        /// save is written. See <see cref="SuspendForSave"/>.</summary>
+        private readonly Dictionary<Entity, ColorSet> m_SaveCleaned =
+            new Dictionary<Entity, ColorSet>();
+
+        // ---- Colour editing -------------------------------------------------------------------
+        //
+        // The game's colour panel shows the building's rendered colour and edits CustomMeshColor
+        // one channel at a time, keeping the other two as they are. On a weathered building both
+        // are the dirty colour: the panel showed it as the current one, and every edit made the
+        // untouched channels the new "clean" colour, so they darkened again each time. While the
+        // Customize tab is open the building is given its clean colour back and left alone; when
+        // it closes, whatever colour it has then is weathered again.
+
+        private Entity m_Editing = Entity.Null;
+        private bool m_EditPendingValid;
+        private BuildingVisualProfile m_EditPending;
+
+        private struct DeferredReapply
+        {
+            public Entity m_Building;
+            public BuildingVisualProfile m_Profile;
+            public int m_Frames;
+        }
+
+        /// <summary>Buildings whose colour the player reset, waiting for the game to put the
+        /// prefab's palette back before it is captured as the new baseline.</summary>
+        private readonly List<DeferredReapply> m_Deferred = new List<DeferredReapply>();
+
+        /// <summary>Frames to wait after a reset. The game restores the palette through an
+        /// end-of-frame command buffer; reading it sooner captures the colour just discarded.</summary>
+        private const int FramesAfterReset = 8;
+
         public MeshColorOverlayRenderer(EntityManager entityManager, ILog log)
         {
             m_EntityManager = entityManager;
@@ -262,6 +304,15 @@ namespace SeenBetterDays.Rendering
                 return false;
             }
 
+            if (building == m_Editing)
+            {
+                // Open in the colour panel. Keep the newest profile and apply it when the panel
+                // closes, on top of whatever colour the player leaves.
+                m_EditPending = profile;
+                m_EditPendingValid = true;
+                return true;
+            }
+
             Entity prefab = m_EntityManager.GetComponentData<PrefabRef>(building).m_Prefab;
 
             // Sized per submesh because that is how Recolor writes it, but only entry 0 is ever
@@ -276,6 +327,7 @@ namespace SeenBetterDays.Rendering
             // ---------------------------------------------------------------- 1. read
             ColorSet basis;
             bool snapshotNeedsWriting;
+            bool? adopted = null;
 
             if (IsOverridden(building) && !StillOurs(building))
             {
@@ -284,6 +336,7 @@ namespace SeenBetterDays.Rendering
                 // than instead of it.
                 basis = m_EntityManager.GetBuffer<CustomMeshColor>(building, true)[0].m_ColorSet;
                 snapshotNeedsWriting = true;
+                adopted = true;
             }
             else if (m_EntityManager.HasBuffer<PristineMeshColor>(building))
             {
@@ -312,9 +365,19 @@ namespace SeenBetterDays.Rendering
 
                 basis = meshColors[0].m_ColorSet;
                 snapshotNeedsWriting = true;
+                adopted = false;
             }
 
             ColorSet weathered = Weather(basis, profile);
+
+            if (adopted == true)
+            {
+                m_AdoptedBasis.Add(building);
+            }
+            else if (adopted == false)
+            {
+                m_AdoptedBasis.Remove(building);
+            }
 
             // ---------------------------------------------------------------- 2. change
             if (!m_EntityManager.HasBuffer<PristineMeshColor>(building))
@@ -355,6 +418,143 @@ namespace SeenBetterDays.Rendering
             m_Records[building] = new Record { m_Profile = profile, m_Written = weathered };
             placed = subMeshCount;
             return true;
+        }
+
+        /// <summary>The building open in the colour panel, or Entity.Null.</summary>
+        public Entity EditingBuilding
+        {
+            get { return m_Editing; }
+        }
+
+        /// <summary>
+        /// Gives a building its clean colour back for as long as it is open in the colour panel,
+        /// and holds it there: <see cref="Apply"/> leaves it alone until <see cref="EndColourEdit"/>.
+        /// </summary>
+        public void BeginColourEdit(Entity building)
+        {
+            EndColourEdit();
+            m_Editing = building;
+            m_EditPendingValid = false;
+
+            Record record;
+            if (!m_Records.TryGetValue(building, out record)
+                || !StillOurs(building, record)
+                || !m_EntityManager.HasBuffer<PristineMeshColor>(building))
+            {
+                // Not weathered, or already repainted by someone else: nothing of ours to lift.
+                return;
+            }
+
+            DynamicBuffer<PristineMeshColor> pristine =
+                m_EntityManager.GetBuffer<PristineMeshColor>(building, true);
+            if (pristine.Length == 0)
+            {
+                return;
+            }
+
+            ColorSet clean = pristine[0].m_ColorSet;
+            DynamicBuffer<CustomMeshColor> custom = m_EntityManager.GetBuffer<CustomMeshColor>(building);
+            for (int i = 0; i < custom.Length; i++)
+            {
+                custom[i] = new CustomMeshColor { m_ColorSet = clean };
+            }
+
+            // Recorded as what we wrote, so a panel closed without changes reads as "still ours"
+            // and the old baseline is kept.
+            record.m_Written = clean;
+            m_Records[building] = record;
+            m_EditPending = record.m_Profile;
+            m_EditPendingValid = true;
+
+            Touch(building);
+        }
+
+        /// <summary>
+        /// Weathers the building that was open in the colour panel again, on top of whatever
+        /// colour it has now: the old baseline if the player changed nothing, their new colour if
+        /// they did. A reset waits a few frames for the game to put the prefab's palette back.
+        /// </summary>
+        public void EndColourEdit()
+        {
+            Entity building = m_Editing;
+            m_Editing = Entity.Null;
+
+            bool pending = m_EditPendingValid;
+            BuildingVisualProfile profile = m_EditPending;
+            m_EditPendingValid = false;
+
+            if (building == Entity.Null || !pending || !m_EntityManager.Exists(building))
+            {
+                return;
+            }
+
+            bool reset = !m_EntityManager.HasBuffer<CustomMeshColor>(building)
+                      || !m_EntityManager.IsComponentEnabled<CustomMeshColor>(building)
+                      || m_EntityManager.GetBuffer<CustomMeshColor>(building, true).Length == 0;
+
+            if (reset)
+            {
+                // The game's reset switches the slot off and empties it. The old baseline is the
+                // colour the player has just discarded, so it goes too.
+                m_Records.Remove(building);
+                m_AdoptedBasis.Remove(building);
+                if (m_EntityManager.HasBuffer<PristineMeshColor>(building))
+                {
+                    m_EntityManager.RemoveComponent<PristineMeshColor>(building);
+                }
+
+                m_Deferred.Add(new DeferredReapply
+                {
+                    m_Building = building,
+                    m_Profile = profile,
+                    m_Frames = FramesAfterReset,
+                });
+                return;
+            }
+
+            int placed;
+            string failure;
+            Apply(building, profile, out placed, out failure);
+        }
+
+        /// <summary>Counts down the buildings waiting after a colour reset. Called every frame.</summary>
+        public void TickDeferred()
+        {
+            for (int i = m_Deferred.Count - 1; i >= 0; i--)
+            {
+                DeferredReapply item = m_Deferred[i];
+                if (item.m_Building == m_Editing)
+                {
+                    continue;
+                }
+
+                if (--item.m_Frames > 0)
+                {
+                    m_Deferred[i] = item;
+                    continue;
+                }
+
+                m_Deferred.RemoveAt(i);
+                if (m_EntityManager.Exists(item.m_Building) && !m_Records.ContainsKey(item.m_Building))
+                {
+                    int placed;
+                    string failure;
+                    Apply(item.m_Building, item.m_Profile, out placed, out failure);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether a building we weather has since been given another colour - by "apply to all
+        /// similar", Recolor, or a paste - and should be weathered again on top of it.
+        /// </summary>
+        public bool RepaintedByOthers(Entity building)
+        {
+            Record record;
+            return building != m_Editing
+                && m_Records.TryGetValue(building, out record)
+                && IsOverridden(building)
+                && !MatchesWrittenColour(building, record);
         }
 
         /// <summary>
@@ -446,6 +646,14 @@ namespace SeenBetterDays.Rendering
                     custom[i] = new CustomMeshColor { m_ColorSet = clean };
                 }
 
+                if (m_AdoptedBasis.Contains(building))
+                {
+                    // The clean colour is the player's own. Saved switched off, it would be lost
+                    // from the city; saved on, it is exactly what they chose.
+                    m_SaveCleaned[building] = clean;
+                    continue;
+                }
+
                 m_EntityManager.SetComponentEnabled<CustomMeshColor>(building, false);
                 m_SaveSuspended[building] = clean;
                 disabled++;
@@ -461,7 +669,7 @@ namespace SeenBetterDays.Rendering
         /// </summary>
         public int ResumeAfterSave()
         {
-            if (m_SaveSuspended.Count == 0)
+            if (m_SaveSuspended.Count == 0 && m_SaveCleaned.Count == 0)
             {
                 return 0;
             }
@@ -472,6 +680,30 @@ namespace SeenBetterDays.Rendering
             m_EntityManager.CompleteAllTrackedJobs();
 
             int enabled = 0;
+            foreach (KeyValuePair<Entity, ColorSet> cleaned in m_SaveCleaned)
+            {
+                Record record;
+                if (!m_EntityManager.Exists(cleaned.Key)
+                    || !m_EntityManager.HasBuffer<CustomMeshColor>(cleaned.Key)
+                    || !m_EntityManager.IsComponentEnabled<CustomMeshColor>(cleaned.Key)
+                    || !CustomColourEquals(cleaned.Key, cleaned.Value)
+                    || !m_Records.TryGetValue(cleaned.Key, out record))
+                {
+                    continue;
+                }
+
+                DynamicBuffer<CustomMeshColor> custom =
+                    m_EntityManager.GetBuffer<CustomMeshColor>(cleaned.Key);
+                for (int i = 0; i < custom.Length; i++)
+                {
+                    custom[i] = new CustomMeshColor { m_ColorSet = record.m_Written };
+                }
+
+                enabled++;
+            }
+
+            m_SaveCleaned.Clear();
+
             var untracked = new List<Entity>();
             foreach (KeyValuePair<Entity, ColorSet> suspended in m_SaveSuspended)
             {
@@ -705,6 +937,7 @@ namespace SeenBetterDays.Rendering
         public void Forget(Entity building)
         {
             Remove(building);
+            m_AdoptedBasis.Remove(building);
 
             if (m_EntityManager.Exists(building) && m_EntityManager.HasBuffer<PristineMeshColor>(building))
             {
@@ -726,6 +959,11 @@ namespace SeenBetterDays.Rendering
             bool restore = StillOurs(building, record) || SuspendedByUs(building);
             m_Records.Remove(building);
             m_SaveSuspended.Remove(building);
+            m_SaveCleaned.Remove(building);
+            if (building == m_Editing)
+            {
+                m_EditPendingValid = false;
+            }
 
             if (restore)
             {
@@ -749,6 +987,9 @@ namespace SeenBetterDays.Rendering
 
             m_Records.Clear();
             m_SaveSuspended.Clear();
+            m_SaveCleaned.Clear();
+            m_Deferred.Clear();
+            m_EditPendingValid = false;
             return cleared;
         }
 
@@ -806,6 +1047,23 @@ namespace SeenBetterDays.Rendering
                         pristineColours[i] = pristine[i].m_ColorSet;
                     }
                 }
+            }
+
+            if (pristineColours != null
+                && m_AdoptedBasis.Contains(building)
+                && m_EntityManager.HasBuffer<CustomMeshColor>(building))
+            {
+                // The clean colour is one the player chose, and it lives in this slot. Removing
+                // the slot would hand the building back the prefab's colour instead of theirs.
+                DynamicBuffer<CustomMeshColor> custom = m_EntityManager.GetBuffer<CustomMeshColor>(building);
+                for (int i = 0; i < custom.Length; i++)
+                {
+                    custom[i] = new CustomMeshColor { m_ColorSet = pristineColours[0] };
+                }
+
+                m_EntityManager.SetComponentEnabled<CustomMeshColor>(building, true);
+                Touch(building);
+                return;
             }
 
             if (m_EntityManager.HasBuffer<CustomMeshColor>(building))
@@ -898,6 +1156,7 @@ namespace SeenBetterDays.Rendering
             for (int i = 0; i < dead.Count; i++)
             {
                 m_Records.Remove(dead[i]);
+                m_AdoptedBasis.Remove(dead[i]);
             }
 
             return dead.Count;

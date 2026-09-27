@@ -94,6 +94,14 @@
 		       Text="Cities: Skylines II is running. Close it and build again - deploying over a running game leaves the mod folder half-written." />
 	</Target>
 
+	<!--
+		The UI module: one hand-written file, no bundler. The game registers the deployed folder
+		under coui://ui-mods/ and loads the .mjs it finds there.
+	-->
+	<Target Name="CopyUiModule" AfterTargets="RunModPostProcessor" BeforeTargets="DeployWIP">
+		<Copy SourceFiles="$(MSBuildProjectDirectory)/UI/SeenBetterDays.mjs" DestinationFolder="$(OutDir)" />
+	</Target>
+
 	<Target Name="RemoveSymbolsBeforeDeploy" AfterTargets="RunModPostProcessor" BeforeTargets="DeployWIP">
 		<ItemGroup>
 			<SymbolsToStrip Include="$(OutDir)**\*.pdb" />

@@ -15,8 +15,13 @@ situation improves recovers on its own.
 - **Detail layer, near the camera.** Within about 200 m, weathered buildings receive decals placed
   on wall surfaces; beyond 280 m they are removed. Placement is deterministic, so a wall gets
   the same marks every time the camera comes back.
-- **Saving.** Colour overrides are switched off while the game writes a save and switched back on
-  afterwards, and the mod's decal entities are left out of the save.
+- **Player colours.** A colour set in the game's colour panel or with Recolor becomes the
+  building's clean colour and is weathered on top. While the panel's Customize tab is open the
+  building shows its clean colour, so the panel reads and edits that rather than the weathered one
+  (the small UI module `SeenBetterDays.mjs` reports the tab, which the game keeps to its UI).
+- **Saving.** Colour overrides are put back to the clean colour while the game writes a save:
+  switched off where that colour is the prefab's own, left on where the player chose it. The mod's
+  decal entities are left out of the save.
 
 ## Decal packs
 

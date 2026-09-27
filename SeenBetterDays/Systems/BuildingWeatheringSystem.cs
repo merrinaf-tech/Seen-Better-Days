@@ -472,9 +472,12 @@ namespace SeenBetterDays.Systems
             // clean - which is exactly what happened the first time this ran.
             bool colourMissing = next > 0.005f && !m_Renderer.Has(building);
 
+            // Repainted since our last pass - "apply to all similar", Recolor, a paste: weather the
+            // new colour now rather than at the next change of state.
             bool worthRedrawing = colourMissing
                                || firstSight
-                               || math.abs(next - state.m_Weathering) >= RedrawThreshold;
+                               || math.abs(next - state.m_Weathering) >= RedrawThreshold
+                               || m_Renderer.RepaintedByOthers(building);
 
             state.m_Weathering = next;
 
@@ -1256,6 +1259,36 @@ namespace SeenBetterDays.Systems
         public int SuspendForSave()
         {
             return m_Renderer.SuspendForSave();
+        }
+
+        /// <summary>The building open in the game's colour panel, or Entity.Null.</summary>
+        public Entity ColourEditBuilding
+        {
+            get { return m_Renderer.EditingBuilding; }
+        }
+
+        /// <summary>
+        /// Opens or closes colour editing: the building shows its clean colour while it is open
+        /// in the Customize tab, and is weathered again on top of whatever colour it has when it
+        /// closes. Entity.Null closes.
+        /// </summary>
+        public void SetColourEdit(Entity building)
+        {
+            if (building == Entity.Null)
+            {
+                m_Renderer.EndColourEdit();
+            }
+            else
+            {
+                m_Renderer.BeginColourEdit(building);
+            }
+        }
+
+        /// <summary>Per-frame work for colour editing: re-weathers buildings after a reset once
+        /// the game has put their palette back.</summary>
+        public void TickColourEdit()
+        {
+            m_Renderer.TickDeferred();
         }
 
         /// <summary>Recomputes the colours of every building this system is weathering, without
