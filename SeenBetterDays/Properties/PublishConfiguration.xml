@@ -59,7 +59,7 @@ Each state keeps what the one before it had and adds its own marks. Decals come 
 
 ## Hand-made designs - 0 so far
 
-Random placement is only the start. A building can also get designs made by hand, one for each state, with every decal where a person chose to put it. When a building has a design for its state, the mod uses it; when it has none, it keeps placing decals at random.
+Random placement is only the start. A building can also get designs made by hand. When a building has a design for its state, the mod uses it; when it has none, it keeps placing decals at random.
 
 The base game, its DLC and the official region packs together have about **3,450 different building models**, and each has four states that carry decals: nearly 14,000 possible designs. This is a long-term project: I will add them a few at a time, starting with the buildings that inspire me most and the ones the mod handles worst.
 
