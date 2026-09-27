@@ -13,3 +13,8 @@ _dev/
 
 # Source art: the exported PNG is versioned, the layered original is not
 Pic/*.psd
+
+# Design screenshots are for reviewing submissions, not for the mod or the repository: a few MB
+# each, and git keeps every one forever. Only design.json ships.
+SeenBetterDays/ShippedDesigns/**/*.png
+SeenBetterDays/ShippedDesigns/**/*.jpg
