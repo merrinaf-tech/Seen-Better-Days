@@ -66,8 +66,10 @@ model share designs.
 
 - **Shipped designs** live in `SeenBetterDays/ShippedDesigns/<building>/<design>/design.json` and
   are deployed to the mod's `Designs` folder.
-- **A player's designs** are exported to `ModsData/SeenBetterDays/Designs` and used in their city
-  at once. A player's copy of a design that also ships with the mod counts once.
+- **A player's designs** are exported to `ModsData/SeenBetterDays/Designs`, with a 1280 px JPEG
+  screenshot, and a zip of the two is put in `ModsData/SeenBetterDays/To send` for the forum. They
+  are used in the player's city at once. A player's copy of a design that also ships with the
+  mod counts once.
 - A design whose pack is installed but no longer has one of its decals is reported in the log as
   obsolete. One whose pack or building is not installed waits quietly.
 - Decals scaled with Extra Detailing Tools are recorded but not used yet.

@@ -3,7 +3,7 @@
  *
  * Id: SeenBetterDays
  * Author: Fabiozsche
- * Version: 0.1.2
+ * Version: 0.1.3
  * Dependencies:
  */
 
@@ -71,28 +71,29 @@ const STATES = [
   ["Decayed", 4],
 ];
 
+// Docked on the right under the top bar and narrow, so the building stays in view while it is
+// decorated; it also folds down to its title. Every row has fixed widths: the UI renderer laid
+// wrapping rows over each other, and buttons without a width broke their labels in two.
+const INNER = 276; // panel width minus padding, in rem
 const panelStyle = {
   position: "absolute",
-  top: "80rem",
-  left: "50%",
-  transform: "translateX(-50%)",
-  width: "560rem",
-  padding: "14rem 16rem",
+  top: "70rem",
+  right: "12rem",
+  width: INNER + 24 + "rem",
+  padding: "10rem 12rem",
   backgroundColor: "rgba(24, 33, 51, 0.94)",
   borderRadius: "6rem",
   color: "#ffffff",
-  fontSize: "14rem",
+  fontSize: "13rem",
   pointerEvents: "auto",
 };
-const titleStyle = { fontSize: "16rem", fontWeight: "bold", marginBottom: "4rem" };
-const mutedStyle = { color: "rgba(255, 255, 255, 0.7)", marginBottom: "10rem" };
-// Fixed-width buttons on rows that never wrap: the UI renderer laid wrapped rows over each
-// other, and buttons without a width broke their labels onto two lines.
+const headerStyle = { display: "flex", flexDirection: "row", alignItems: "center" };
+const titleStyle = { width: INNER - 30 + "rem", fontSize: "14rem", fontWeight: "bold" };
+const mutedStyle = { color: "rgba(255, 255, 255, 0.65)", fontSize: "12rem" };
+const buildingStyle = { ...mutedStyle, width: INNER + "rem", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", marginTop: "2rem" };
 const rowStyle = { display: "flex", flexDirection: "row", marginTop: "8rem" };
-const buttonStyle = {
-  width: "124rem",
-  height: "32rem",
-  marginRight: "8rem",
+const buttonBase = {
+  height: "28rem",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -101,15 +102,14 @@ const buttonStyle = {
   borderRadius: "4rem",
   cursor: "pointer",
 };
-const wideButtonStyle = { ...buttonStyle, width: "256rem" };
-const messageStyle = { marginTop: "8rem", color: "#b9e0ff" };
-const sectionStyle = { marginTop: "12rem" };
-const designRowStyle = { display: "flex", flexDirection: "row", alignItems: "center", marginTop: "6rem" };
-const designLabelStyle = { width: "388rem", whiteSpace: "nowrap" };
+const messageStyle = { marginTop: "8rem", color: "#b9e0ff", fontSize: "12rem", width: INNER + "rem" };
+const sectionStyle = { marginTop: "10rem" };
+const linkStyle = { cursor: "pointer", width: INNER + "rem", whiteSpace: "nowrap" };
+const designRowStyle = { display: "flex", flexDirection: "row", alignItems: "center", marginTop: "4rem" };
 const inputStyle = {
-  width: "520rem",
-  height: "32rem",
-  marginTop: "8rem",
+  width: INNER - 16 + "rem",
+  height: "28rem",
+  marginTop: "6rem",
   padding: "0 8rem",
   backgroundColor: "rgba(255, 255, 255, 0.9)",
   color: "#1c2936",
@@ -126,15 +126,48 @@ function gameTextInput() {
   }
 }
 
-function Button({ label, onClick, wide }) {
+function Button({ label, onClick, width, marginRight }) {
   const [hover, setHover] = React.useState(false);
-  const base = wide ? wideButtonStyle : buttonStyle;
-  const style = hover ? { ...base, backgroundColor: "rgba(255, 255, 255, 0.24)" } : base;
+  const style = {
+    ...buttonBase,
+    width: width + "rem",
+    marginRight: (marginRight || 0) + "rem",
+    backgroundColor: hover ? "rgba(255, 255, 255, 0.24)" : buttonBase.backgroundColor,
+  };
   return h("div", { style, onClick, onMouseEnter: () => setHover(true), onMouseLeave: () => setHover(false) }, label);
+}
+
+// The state is asked when exporting, not chosen beforehand: a state button sitting in the
+// panel read as a setting, not as part of exporting.
+function ExportChooser({ onClose }) {
+  const half = (INNER - 8) / 2;
+  const pick = (value) => {
+    trigger("designExport", value);
+    onClose();
+  };
+  return h(
+    "div",
+    { style: sectionStyle },
+    h("div", null, "Export this design for which state?"),
+    h(
+      "div",
+      { style: rowStyle },
+      h(Button, { label: "Aged", width: half, marginRight: 8, onClick: () => pick(1) }),
+      h(Button, { label: "Worn", width: half, onClick: () => pick(2) })
+    ),
+    h(
+      "div",
+      { style: rowStyle },
+      h(Button, { label: "Neglected", width: half, marginRight: 8, onClick: () => pick(3) }),
+      h(Button, { label: "Decayed", width: half, onClick: () => pick(4) })
+    ),
+    h("div", { style: rowStyle }, h(Button, { label: "Cancel", width: INNER, onClick: onClose }))
+  );
 }
 
 function DesignList() {
   const json = api.useValue(designs$);
+  const [open, setOpen] = React.useState(false);
   let designs = [];
   try {
     designs = JSON.parse(json || "[]");
@@ -149,19 +182,25 @@ function DesignList() {
   return h(
     "div",
     { style: sectionStyle },
-    h("div", null, "Start from a design:"),
-    designs.map((d) =>
-      h(
-        "div",
-        { key: d.index, style: designRowStyle },
-        h(
-          "div",
-          { style: designLabelStyle },
-          d.state + (d.author ? " by " + d.author : "") + " - " + d.decals + " decals" + (d.shipped ? "" : " (yours)")
-        ),
-        h(Button, { label: "Place", onClick: () => trigger("designLoad", d.index) })
-      )
-    )
+    h(
+      "div",
+      { style: linkStyle, onClick: () => setOpen(!open) },
+      (open ? "[-] " : "[+] ") + "Start from a design (" + designs.length + ")"
+    ),
+    open
+      ? designs.map((d) =>
+          h(
+            "div",
+            { key: d.index, style: designRowStyle },
+            h(
+              "div",
+              { style: { width: INNER - 64 + "rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: "12rem" } },
+              d.state + (d.author ? " by " + d.author : "") + " - " + d.decals + (d.shipped ? "" : " (yours)")
+            ),
+            h(Button, { label: "Place", width: 60, onClick: () => trigger("designLoad", d.index) })
+          )
+        )
+      : null
   );
 }
 
@@ -176,21 +215,17 @@ function NamePrompt() {
   return h(
     "div",
     { style: sectionStyle },
-    h("div", { style: titleStyle }, "Your designer name"),
+    h("div", { style: { fontWeight: "bold" } }, "Your designer name"),
     h(
       "div",
-      { style: mutedStyle },
-      "Shown on your designs and, in game, on hover over the buildings that use them. Asked only once: you can change it later in the options."
+      { style: { ...mutedStyle, width: INNER + "rem" } },
+      "Shown on your designs and on hover in game. Asked only once; you can change it in the options."
     ),
     TextInput
       ? h(TextInput, { value: name, onChange, style: inputStyle })
       : h("input", { type: "text", value: name, onChange, style: inputStyle }),
-    h(
-      "div",
-      { style: rowStyle },
-      h(Button, { wide: true, label: "Use this name and export", onClick: () => trigger("designNameChosen", name) }),
-      h(Button, { wide: true, label: "Stay anonymous and export", onClick: () => trigger("designNameChosen", "") })
-    )
+    h("div", { style: rowStyle }, h(Button, { label: "Use this name and export", width: INNER, onClick: () => trigger("designNameChosen", name) })),
+    h("div", { style: rowStyle }, h(Button, { label: "Stay anonymous and export", width: INNER, onClick: () => trigger("designNameChosen", "") }))
   );
 }
 
@@ -199,38 +234,37 @@ function DesignPanel() {
   const message = api.useValue(message$);
   const capturing = api.useValue(capturing$);
   const askName = api.useValue(askName$);
+  const [collapsed, setCollapsed] = React.useState(false);
+  const [choosing, setChoosing] = React.useState(false);
 
   // Hidden while the export's screenshot is taken, so the picture shows the building only.
   if (!building || capturing) {
     return null;
   }
 
+  const header = h(
+    "div",
+    { style: headerStyle },
+    h("div", { style: titleStyle }, "Design mode"),
+    h(Button, { label: collapsed ? "+" : "-", width: 28, onClick: () => setCollapsed(!collapsed) })
+  );
+
+  if (collapsed) {
+    return h("div", { style: panelStyle }, header);
+  }
+
   return h(
     "div",
     { style: panelStyle },
-    h("div", { style: titleStyle }, "Seen Better Days - design mode"),
-    h("div", { style: mutedStyle }, building),
+    header,
+    h("div", { style: buildingStyle }, building),
     askName ? h(NamePrompt) : null,
-    h("div", null, "Export as:"),
-    h(
-      "div",
-      { style: rowStyle },
-      STATES.map(([name, value]) =>
-        h(Button, { key: name, label: name, onClick: () => trigger("designExport", value) })
-      )
-    ),
-    h(
-      "div",
-      { style: rowStyle },
-      h(Button, { wide: true, label: "Remove the decals I placed", onClick: () => trigger("designClearPlaced") }),
-      h(Button, { wide: true, label: "Exit design mode", onClick: () => trigger("designExit") })
-    ),
-    h(
-      "div",
-      { style: rowStyle },
-      h(Button, { wide: true, label: "Open my designs folder", onClick: () => trigger("designOpenFolder") })
-    ),
+    choosing
+      ? h(ExportChooser, { onClose: () => setChoosing(false) })
+      : h("div", { style: rowStyle }, h(Button, { label: "Export design", width: INNER, onClick: () => setChoosing(true) })),
     h(DesignList),
+    h("div", { style: rowStyle }, h(Button, { label: "Open the zips to send", width: INNER, onClick: () => trigger("designOpenFolder") })),
+    h("div", { style: rowStyle }, h(Button, { label: "Exit design mode", width: INNER, onClick: () => trigger("designExit") })),
     message ? h("div", { style: messageStyle }, message) : null
   );
 }

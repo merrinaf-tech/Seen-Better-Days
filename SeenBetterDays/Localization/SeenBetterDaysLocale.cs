@@ -122,8 +122,8 @@ namespace SeenBetterDays.Localization
                     "For making hand-made decal designs. Select a building and press Ctrl+Alt+M: it "
                   + "becomes a blank canvas. Decorate it with Anarchy and Extra Detailing Tools, "
                   + "then export it from the panel for the state you choose. Designs are saved in "
-                  + "ModsData/SeenBetterDays/Designs with a screenshot, and used in your city "
-                  + "straight away."
+                  + "ModsData/SeenBetterDays/Designs with a screenshot and used in your city "
+                  + "straight away; a zip ready to send is put in ModsData/SeenBetterDays/To send."
                 },
                 {
                     m_Settings.GetOptionLabelLocaleID(nameof(SeenBetterDaysSettings.DesignerName)),

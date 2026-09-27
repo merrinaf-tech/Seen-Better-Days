@@ -48,7 +48,6 @@ namespace SeenBetterDays.Systems
         {
             None,
             Export,
-            ClearPlaced,
             OpenFolder,
             Load,
             NameChosen,
@@ -85,7 +84,6 @@ namespace SeenBetterDays.Systems
                 PendingCommand = Command.Export;
                 PendingState = (VisualState)state;
             }));
-            AddBinding(new TriggerBinding(Group, "designClearPlaced", () => PendingCommand = Command.ClearPlaced));
             AddBinding(new TriggerBinding(Group, "designOpenFolder", () => PendingCommand = Command.OpenFolder));
             AddBinding(new TriggerBinding(Group, "designExit", () => PendingCommand = Command.Exit));
         }
@@ -162,10 +160,34 @@ namespace SeenBetterDays.Systems
 
         private string m_BuildingName;
         private string m_PendingScreenshot;
+        private string m_FinalScreenshot;
+
+        /// <summary>The exported design's folder and the name of its ready-to-send zip.</summary>
+        private string m_PendingFolder;
+        private string m_PendingZipName;
         private string m_MessageAfterCapture;
+
+        /// <summary>Frames left to wait for the game to write the screenshot before it is
+        /// converted. The game writes it at the end of a frame, not when asked.</summary>
+        private int m_ConvertWait;
+
+        /// <summary>Width the screenshot is scaled down to. Enough to judge a design, and small
+        /// enough to attach to a forum post: about 200 KB as JPEG, against 3 MB as a full PNG.</summary>
+        private const int ScreenshotWidth = 1280;
+        private const int ScreenshotJpegQuality = 85;
+        private const int ConvertWaitFrames = 180;
         private int m_CaptureCountdown;
         private int m_ShowCountdown;
-        private bool m_ConfirmClear;
+        /// <summary>Decals already around the canvas when design mode began: the city's own
+        /// decoration. Neither exported nor removed on exit.</summary>
+        private HashSet<Entity> m_PreExisting = new HashSet<Entity>();
+
+        /// <summary>What the placed decals looked like at the last export, so leaving can tell
+        /// whether there is unexported work.</summary>
+        private string m_ExportedSignature = string.Empty;
+
+        /// <summary>Set by an exit refused for unexported work; the next exit goes ahead.</summary>
+        private bool m_ConfirmExit;
 
         /// <summary>The designs offered in the panel for the canvas's model, in panel order.</summary>
         private List<DesignLibrary.Resolved> m_Offered = new List<DesignLibrary.Resolved>();
@@ -221,13 +243,13 @@ namespace SeenBetterDays.Systems
             if (canvas != Entity.Null && (!toolsOn || !EntityManager.Exists(canvas)
                                           || EntityManager.HasComponent<Deleted>(canvas)))
             {
-                Leave();
+                Leave(true);
                 return;
             }
 
             if (toolsOn && ToggleKeyPressed())
             {
-                if (canvas != Entity.Null) Leave(); else Enter(m_SelectedInfo.selectedEntity);
+                if (canvas != Entity.Null) Leave(false); else Enter(m_SelectedInfo.selectedEntity);
             }
 
             DesignStudioUISystem.Command command = m_UI.PendingCommand;
@@ -245,10 +267,14 @@ namespace SeenBetterDays.Systems
                 return;
             }
 
+            if (command != DesignStudioUISystem.Command.Exit)
+            {
+                m_ConfirmExit = false;
+            }
+
             switch (command)
             {
                 case DesignStudioUISystem.Command.Export:
-                    m_ConfirmClear = false;
                     if (Mod.Settings != null && !Mod.Settings.DesignerNameAsked)
                     {
                         // First export: ask once for the name, pre-filled with the account name.
@@ -276,14 +302,11 @@ namespace SeenBetterDays.Systems
                 case DesignStudioUISystem.Command.Load:
                     Load(index);
                     break;
-                case DesignStudioUISystem.Command.ClearPlaced:
-                    ClearPlaced();
-                    break;
                 case DesignStudioUISystem.Command.OpenFolder:
                     OpenFolder();
                     break;
                 case DesignStudioUISystem.Command.Exit:
-                    Leave();
+                    Leave(false);
                     break;
             }
         }
@@ -319,7 +342,14 @@ namespace SeenBetterDays.Systems
             }
 
             DesignCanvas.Building = building;
-            m_ConfirmClear = false;
+            m_ConfirmExit = false;
+            m_ExportedSignature = string.Empty;
+            m_PreExisting = new HashSet<Entity>();
+            List<Entity> already;
+            int ignoredCount;
+            string ignoredFailure;
+            CollectPlaced(out ignoredCount, out ignoredFailure, out already);
+            m_PreExisting = new HashSet<Entity>(already);
             m_Weathering.ClearForDesign(building);
             DecalObjectOverlayRenderer decals = m_Harness.DecalRenderer;
             if (decals != null)
@@ -327,21 +357,52 @@ namespace SeenBetterDays.Systems
                 decals.RemoveIncludingUntracked(building);
             }
 
-            m_UI.Show(m_BuildingName, "Place decals with Anarchy and Extra Detailing Tools, frame the building, then "
-                                    + "export: the screenshot is taken without the interface.");
+            m_UI.Show(m_BuildingName, "Place decals with Anarchy and Extra Detailing Tools, frame the building and export. "
+                                    + "Leaving design mode removes the decals placed here.");
             OfferDesigns();
             Mod.Log.Info("Seen Better Days: design mode on building " + building.Index + " (" + m_BuildingName + ").");
         }
 
-        private void Leave()
+        /// <summary>
+        /// Ends design mode and removes the decals placed during it - not those that were there
+        /// before. Refuses once when some of them were never exported, so work is not lost to a
+        /// stray click; the second exit goes ahead. <paramref name="force"/> skips the question,
+        /// for when the option is switched off or the building is gone.
+        /// </summary>
+        private void Leave(bool force)
         {
             Entity building = DesignCanvas.Building;
+            if (building != Entity.Null && EntityManager.Exists(building) && !EntityManager.HasComponent<Deleted>(building))
+            {
+                int ignoredCount;
+                string failure;
+                List<Entity> placed;
+                CollectPlaced(out ignoredCount, out failure, out placed);
+                if (!force && failure == null && placed.Count > 0 && !m_ConfirmExit
+                    && Signature(placed) != m_ExportedSignature)
+                {
+                    m_ConfirmExit = true;
+                    m_UI.SetMessage(placed.Count + " decal(s) placed since the last export have not been exported. "
+                                  + "Exit again to discard them.");
+                    return;
+                }
+
+                for (int i = 0; i < placed.Count; i++)
+                {
+                    if (EntityManager.Exists(placed[i]) && !EntityManager.HasComponent<Deleted>(placed[i]))
+                    {
+                        EntityManager.AddComponent<Deleted>(placed[i]);
+                    }
+                }
+            }
+
+            m_ConfirmExit = false;
+            m_PreExisting = new HashSet<Entity>();
             DesignCanvas.Building = Entity.Null;
             m_UI.Show(string.Empty, string.Empty);
             m_UI.CloseNamePrompt();
             m_UI.SetDesigns("[]");
             m_Offered.Clear();
-            m_ConfirmClear = false;
 
             if (building != Entity.Null && EntityManager.Exists(building))
             {
@@ -365,14 +426,16 @@ namespace SeenBetterDays.Systems
 
         /// <summary>
         /// The decals the player placed on the canvas: every standalone decal object whose
-        /// position falls inside the building's bounds, plus a margin. Those not on the whitelist
-        /// are counted and left out.
+        /// position falls inside the building's bounds, plus a margin, that was not there when
+        /// design mode began. The whitelisted ones are returned for export; <paramref name="all"/>
+        /// holds every one, whitelisted or not, for removal on exit.
         /// </summary>
-        private List<Found> CollectPlaced(out int notWhitelisted, out string failure)
+        private List<Found> CollectPlaced(out int notWhitelisted, out string failure, out List<Entity> all)
         {
             notWhitelisted = 0;
             failure = null;
             var found = new List<Found>();
+            all = new List<Entity>();
 
             DecalPrefabCatalog catalog = m_Harness.Catalog;
             if (catalog == null)
@@ -405,11 +468,12 @@ namespace SeenBetterDays.Systems
 
                     Transform t = EntityManager.GetComponentData<Transform>(e);
                     float3 local = math.mul(inverse, t.m_Position - transform.m_Position);
-                    if (math.any(local < bounds.min) || math.any(local > bounds.max))
+                    if (math.any(local < bounds.min) || math.any(local > bounds.max) || m_PreExisting.Contains(e))
                     {
                         continue;
                     }
 
+                    all.Add(e);
                     int pack = DecalPrefabCatalog.PackOf(info.Name);
                     if (pack < 0)
                     {
@@ -447,7 +511,8 @@ namespace SeenBetterDays.Systems
 
             int notWhitelisted;
             string failure;
-            List<Found> found = CollectPlaced(out notWhitelisted, out failure);
+            List<Entity> allPlaced;
+            List<Found> found = CollectPlaced(out notWhitelisted, out failure, out allPlaced);
             if (failure != null)
             {
                 m_UI.SetMessage(failure);
@@ -519,6 +584,7 @@ namespace SeenBetterDays.Systems
             }
 
             DesignLibrary.Instance.AddLocal(jsonPath, Mod.Log);
+            m_ExportedSignature = Signature(allPlaced);
             OfferDesigns();
 
             string summary = "Exported " + found.Count + " decal(s) as " + state + ".";
@@ -529,8 +595,11 @@ namespace SeenBetterDays.Systems
             Mod.Log.Info("Seen Better Days: " + summary + " Written to " + jsonPath + ".");
 
             // Hide the panel, take the screenshot a few frames later, then show the panel again.
-            m_PendingScreenshot = Path.Combine(folder, "screenshot.png");
-            m_MessageAfterCapture = summary + " Saved in " + folder;
+            m_PendingScreenshot = Path.Combine(folder, "screenshot-full.png");
+            m_FinalScreenshot = Path.Combine(folder, "screenshot.jpg");
+            m_PendingFolder = folder;
+            m_PendingZipName = SafeName(m_BuildingName) + "-" + Path.GetFileName(folder) + ".zip";
+            m_MessageAfterCapture = summary + " Ready to send: " + m_PendingZipName + " (Open folder).";
             m_CaptureCountdown = CaptureDelayFrames;
             m_UI.SetCapturing(true);
             HideInterface();
@@ -607,42 +676,220 @@ namespace SeenBetterDays.Systems
                 ShowInterface();
                 m_UI.SetCapturing(false);
                 m_UI.SetMessage(m_MessageAfterCapture);
+                m_ConvertWait = ConvertWaitFrames;
+                return;
+            }
+
+            if (m_ConvertWait > 0)
+            {
+                m_ConvertWait--;
+                if (TryConvertScreenshot())
+                {
+                    m_ConvertWait = 0;
+                    WriteZip();
+                }
+                else if (m_ConvertWait == 0)
+                {
+                    Mod.Log.Warn("Seen Better Days: the design screenshot was not written in time; "
+                               + "it stays as a full-size PNG if it appears.");
+                    WriteZip();
+                }
+            }
+        }
+
+        /// <summary>The folder of zips ready to attach to a forum post.</summary>
+        public static string ToSendFolder
+        {
+            get
+            {
+                return Path.Combine(UnityEngine.Application.persistentDataPath, "ModsData", "SeenBetterDays", "To send");
             }
         }
 
         /// <summary>
-        /// Deletes the whitelisted decals placed on the canvas, so a design can be checked by
-        /// letting the mod put it back. Asks twice: these are the player's own objects.
+        /// Packs the exported design - its design.json and screenshot - into one zip in the To
+        /// send folder, so it can be attached to a forum post as a single file. The unpacked
+        /// folder stays: it is what the mod reads.
         /// </summary>
-        private void ClearPlaced()
+        private void WriteZip()
         {
-            if (!m_ConfirmClear)
+            if (string.IsNullOrEmpty(m_PendingFolder) || !Directory.Exists(m_PendingFolder))
             {
-                m_ConfirmClear = true;
-                m_UI.SetMessage("This deletes the whitelisted decals you placed on this building. Press again to confirm.");
                 return;
             }
 
-            m_ConfirmClear = false;
-            int notWhitelisted;
-            string failure;
-            List<Found> found = CollectPlaced(out notWhitelisted, out failure);
-            if (failure != null)
+            string zipPath = Path.Combine(ToSendFolder, m_PendingZipName);
+            try
             {
-                m_UI.SetMessage(failure);
-                return;
-            }
-
-            for (int i = 0; i < found.Count; i++)
-            {
-                if (EntityManager.Exists(found[i].Entity) && !EntityManager.HasComponent<Deleted>(found[i].Entity))
+                Directory.CreateDirectory(ToSendFolder);
+                if (File.Exists(zipPath))
                 {
-                    EntityManager.AddComponent<Deleted>(found[i].Entity);
+                    File.Delete(zipPath);
+                }
+
+                string inner = SafeName(m_BuildingName) + "/" + Path.GetFileName(m_PendingFolder) + "/";
+                using (FileStream stream = new FileStream(zipPath, FileMode.CreateNew))
+                using (var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create))
+                {
+                    foreach (string file in Directory.GetFiles(m_PendingFolder))
+                    {
+                        System.IO.Compression.ZipArchiveEntry entry = zip.CreateEntry(inner + Path.GetFileName(file));
+                        using (Stream target = entry.Open())
+                        using (FileStream source = File.OpenRead(file))
+                        {
+                            source.CopyTo(target);
+                        }
+                    }
+                }
+
+                Mod.Log.Info("Seen Better Days: design packed for sending as " + zipPath + ".");
+            }
+            catch (Exception e)
+            {
+                Mod.Log.Warn("Seen Better Days: could not pack the design into " + zipPath + ": " + e.Message);
+                m_UI.SetMessage("The design is saved, but the zip to send could not be written: " + e.Message);
+            }
+            finally
+            {
+                m_PendingFolder = null;
+            }
+        }
+
+        /// <summary>
+        /// Scales the full-size PNG the game wrote down to <see cref="ScreenshotWidth"/> and saves
+        /// it as JPEG, then deletes the PNG. False while the PNG is not there, or still being
+        /// written.
+        /// </summary>
+        private bool TryConvertScreenshot()
+        {
+            if (!File.Exists(m_PendingScreenshot))
+            {
+                return false;
+            }
+
+            byte[] png;
+            try
+            {
+                using (var stream = new FileStream(m_PendingScreenshot, FileMode.Open, FileAccess.Read, FileShare.None))
+                {
+                    png = new byte[stream.Length];
+                    int read = 0;
+                    while (read < png.Length)
+                    {
+                        int n = stream.Read(png, read, png.Length - read);
+                        if (n <= 0) break;
+                        read += n;
+                    }
+                }
+            }
+            catch (IOException)
+            {
+                // Still being written.
+                return false;
+            }
+
+            UnityEngine.Texture2D source = null;
+            UnityEngine.Texture2D scaled = null;
+            try
+            {
+                source = new UnityEngine.Texture2D(2, 2);
+                if (png.Length == 0 || !UnityEngine.ImageConversion.LoadImage(source, png))
+                {
+                    return false;
+                }
+
+                scaled = ScaleDown(source, ScreenshotWidth);
+                File.WriteAllBytes(m_FinalScreenshot, UnityEngine.ImageConversion.EncodeToJPG(scaled, ScreenshotJpegQuality));
+                File.Delete(m_PendingScreenshot);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Mod.Log.Warn("Seen Better Days: could not convert the design screenshot, keeping the PNG: " + e.Message);
+                return true;
+            }
+            finally
+            {
+                if (source != null) UnityEngine.Object.Destroy(source);
+                if (scaled != null && scaled != source) UnityEngine.Object.Destroy(scaled);
+            }
+        }
+
+        /// <summary>Bilinear downscale on the CPU, to a width, keeping the aspect ratio. Once per
+        /// export, so plain loops are fine, and no render texture means no colour-space surprises.</summary>
+        private static UnityEngine.Texture2D ScaleDown(UnityEngine.Texture2D source, int width)
+        {
+            int sw = source.width, sh = source.height;
+            if (sw <= width)
+            {
+                return source;
+            }
+
+            int dw = width;
+            int dh = Math.Max(1, (int)Math.Round(sh * (double)width / sw));
+            UnityEngine.Color32[] src = source.GetPixels32();
+            var dst = new UnityEngine.Color32[dw * dh];
+            float fx = (float)(sw - 1) / Math.Max(1, dw - 1);
+            float fy = (float)(sh - 1) / Math.Max(1, dh - 1);
+
+            for (int y = 0; y < dh; y++)
+            {
+                float sy = y * fy;
+                int y0 = (int)sy;
+                int y1 = Math.Min(y0 + 1, sh - 1);
+                float ty = sy - y0;
+                for (int x = 0; x < dw; x++)
+                {
+                    float sx = x * fx;
+                    int x0 = (int)sx;
+                    int x1 = Math.Min(x0 + 1, sw - 1);
+                    float tx = sx - x0;
+                    UnityEngine.Color32 a = src[y0 * sw + x0], b = src[y0 * sw + x1];
+                    UnityEngine.Color32 c = src[y1 * sw + x0], d = src[y1 * sw + x1];
+                    dst[y * dw + x] = new UnityEngine.Color32(
+                        Lerp2(a.r, b.r, c.r, d.r, tx, ty),
+                        Lerp2(a.g, b.g, c.g, d.g, tx, ty),
+                        Lerp2(a.b, b.b, c.b, d.b, tx, ty),
+                        255);
                 }
             }
 
-            m_UI.SetMessage("Deleted " + found.Count + " decal(s)."
-                          + (notWhitelisted > 0 ? " " + notWhitelisted + " not on the whitelist were left." : string.Empty));
+            var result = new UnityEngine.Texture2D(dw, dh, UnityEngine.TextureFormat.RGB24, false);
+            result.SetPixels32(dst);
+            result.Apply();
+            return result;
+        }
+
+        private static byte Lerp2(byte a, byte b, byte c, byte d, float tx, float ty)
+        {
+            float top = a + (b - a) * tx;
+            float bottom = c + (d - c) * tx;
+            return (byte)Math.Round(top + (bottom - top) * ty);
+        }
+
+        /// <summary>The placed decals as a comparable string: prefab and position of each, in a
+        /// stable order. Equal before and after means nothing changed since the last export.</summary>
+        private string Signature(List<Entity> decals)
+        {
+            var parts = new List<string>(decals.Count);
+            for (int i = 0; i < decals.Count; i++)
+            {
+                Entity e = decals[i];
+                if (!EntityManager.Exists(e))
+                {
+                    continue;
+                }
+
+                float3 p = EntityManager.GetComponentData<Transform>(e).m_Position;
+                quaternion r = EntityManager.GetComponentData<Transform>(e).m_Rotation;
+                parts.Add(EntityManager.GetComponentData<PrefabRef>(e).m_Prefab.Index + ":"
+                        + Math.Round(p.x, 2) + "," + Math.Round(p.y, 2) + "," + Math.Round(p.z, 2) + ":"
+                        + Math.Round(r.value.x, 3) + "," + Math.Round(r.value.y, 3) + ","
+                        + Math.Round(r.value.z, 3) + "," + Math.Round(r.value.w, 3));
+            }
+
+            parts.Sort(StringComparer.Ordinal);
+            return string.Join(";", parts.ToArray());
         }
 
         /// <summary>
@@ -707,19 +954,19 @@ namespace SeenBetterDays.Systems
             }
         }
 
-        /// <summary>Opens the player's designs folder in the system's file browser.</summary>
+        /// <summary>Opens the folder of designs ready to send in the system's file browser.</summary>
         private void OpenFolder()
         {
-            string folder = DesignLibrary.Instance.LocalFolder;
+            string folder = ToSendFolder;
             try
             {
                 Directory.CreateDirectory(folder);
                 UnityEngine.Application.OpenURL("file:///" + folder.Replace('\\', '/'));
-                m_UI.SetMessage("Your designs are in " + folder);
+                m_UI.SetMessage("Designs ready to send are in " + folder + ". Attach the zip to a post in the forum thread.");
             }
             catch (Exception e)
             {
-                m_UI.SetMessage("Your designs are in " + folder + " (could not open it: " + e.Message + ")");
+                m_UI.SetMessage("Designs ready to send are in " + folder + " (could not open it: " + e.Message + ")");
             }
         }
 
