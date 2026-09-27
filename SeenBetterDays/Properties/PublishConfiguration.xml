@@ -57,6 +57,18 @@ Each state keeps what the one before it had and adds its own marks. Decals come 
 
 **Know a decal pack that would suit?** Tell me in the comments and I will look at adding it to the list.
 
+## Hand-made designs - 0 so far
+
+Random placement is only the start. A building can also get designs made by hand, one for each state, with every decal where a person chose to put it. When a building has a design for its state, the mod uses it; when it has none, it keeps placing decals at random.
+
+The base game, its DLC and the official region packs together have about **3,450 different building models**, and each has four states that carry decals: nearly 14,000 possible designs. This is a long-term project: I will add them a few at a time, starting with the buildings that inspire me most and the ones the mod handles worst.
+
+Hand-made designs are also lighter: placing one took about an eighth of the time of a random placement in testing, because the mod no longer has to study the walls.
+
+**Make your own.** Turn on **Design tools** in the advanced options, select a building and press **Ctrl+Alt+M**: it becomes a blank canvas. Decorate it with Anarchy and Extra Detailing Tools, or start from a design that already exists for it, then export it for the state you choose. It is saved with a screenshot in `ModsData/SeenBetterDays/Designs` and used in your city straight away. Decals scaled with Extra Detailing Tools are not supported yet.
+
+**Send them to me.** Post your designs - each folder holds a `design.json` and its screenshot - in the [forum thread](https://forum.paradoxplaza.com/forum/threads/seen-better-days-mod.1942860/). I will add them to the mod, and with the next update every player gets them, with your name on them: hovering over a building shows who designed its decals.
+
 ## Options
 
 - **Weather buildings** - the whole effect, on or off, live.
@@ -64,7 +76,7 @@ Each state keeps what the one before it had and adds its own marks. Decals come 
 - **Intensity** - from 25% to 200%.
 - **Rebuild Seen Better Days appearance** - clears everything the mod drew and applies it again.
 
-With the game's **Show Advanced** switch on: a tooltip explaining why a building looks the way it does, keys to set a building's state by hand, and the developer shortcuts. All are off by default.
+With the game's **Show Advanced** switch on: a tooltip explaining why a building looks the way it does, keys to set a building's state by hand, the design tools and the developer shortcuts. All are off by default.
 
 ## Good to know
 
@@ -89,7 +101,7 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 	<ExternalLink Type="github" Url="https://github.com/merrinaf-tech/Seen-Better-Days" />
 	<ExternalLink Type="kofi" Url="https://ko-fi.com/fabiozsche" />
 
-	<ModVersion Value="0.1.1" />
+	<ModVersion Value="0.1.2" />
 
 	<!-- Built and verified against game build 1.6.2f1. -->
 	<GameVersion Value="1.6.*" />
@@ -99,7 +111,7 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 
 	<!-- Read by Update and NewVersion only; the first Publish ignores it. -->
 	<ChangeLog>
-- The Customize tab shows the building's clean colour for editing.
-- Colours you choose are kept after saving and reloading.
+- Design tools (advanced option): decorate a building by hand and export it as a design for a chosen state.
+- Buildings use a hand-made design when one exists for their state.
 	</ChangeLog>
 </Publish>
