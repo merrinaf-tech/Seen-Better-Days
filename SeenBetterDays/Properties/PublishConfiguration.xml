@@ -84,7 +84,7 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 	<ExternalLink Type="github" Url="https://github.com/merrinaf-tech/Seen-Better-Days" />
 	<ExternalLink Type="kofi" Url="https://ko-fi.com/fabiozsche" />
 
-	<ModVersion Value="0.1.0" />
+	<ModVersion Value="0.1.1" />
 
 	<!-- Built and verified against game build 1.6.2f1. -->
 	<GameVersion Value="1.6.*" />
@@ -93,5 +93,8 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 	<AccessLevel Value="Public" />
 
 	<!-- Read by Update and NewVersion only; the first Publish ignores it. -->
-	<ChangeLog>First public version.</ChangeLog>
+	<ChangeLog>
+- The Customize tab shows the building's clean colour for editing.
+- Colours you choose are kept after saving and reloading.
+	</ChangeLog>
 </Publish>
