@@ -13,7 +13,7 @@ situation improves recovers on its own.
   (`CustomMeshColor`) darkens, fades and slightly tints each building on its own. Two instances of
   the same prefab no longer look identical, and no texture or prefab is changed.
 - **Detail layer, near the camera.** Within about 200 m, weathered buildings receive decals placed
-  on real wall surfaces; beyond 280 m they are removed. Placement is deterministic, so a wall gets
+  on wall surfaces; beyond 280 m they are removed. Placement is deterministic, so a wall gets
   the same marks every time the camera comes back.
 - **Saving.** Colour overrides are switched off while the game writes a save and switched back on
   afterwards, and the mod's decal entities are left out of the save.
