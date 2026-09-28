@@ -101,7 +101,7 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 	<ExternalLink Type="github" Url="https://github.com/merrinaf-tech/Seen-Better-Days" />
 	<ExternalLink Type="kofi" Url="https://ko-fi.com/fabiozsche" />
 
-	<ModVersion Value="0.1.3" />
+	<ModVersion Value="0.1.4" />
 
 	<!-- Built and verified against game build 1.6.2f1. -->
 	<GameVersion Value="1.6.*" />
@@ -111,8 +111,7 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 
 	<!-- Read by Update and NewVersion only; the first Publish ignores it. -->
 	<ChangeLog>
-- Design mode: a compact panel on the right; the state is chosen when exporting.
-- Designs are exported as a zip ready to send, with a smaller screenshot.
-- Leaving design mode removes the decals placed in it.
+- Fixed a crash when loading a city.
+- High-level buildings on cheap streets no longer look run-down.
 	</ChangeLog>
 </Publish>
