@@ -124,7 +124,6 @@ namespace SeenBetterDays.Systems
         private double m_CatchUpWorkMilliseconds;
         private double m_CatchUpMaxBatchMilliseconds;
         private int m_ResetCooldownUpdates;
-        private bool m_LegacyCleanupPending;
 
         /// <summary>
         /// Buildings whose weathering the player has set by hand, which the simulation leaves
@@ -196,6 +195,14 @@ namespace SeenBetterDays.Systems
         {
             base.OnGameLoadingComplete(purpose, mode);
 
+            // Recorded every time: a crash on 2026-09-28 followed this notification arriving when
+            // the city had already been weathered, and the log is the only way to see it again.
+            int dropped = m_Renderer.ForgetPreviousCity();
+            Mod.Log.Info("Seen Better Days: loading complete (" + purpose + ", " + mode + "); dropped "
+                       + dropped + " colour record(s) of buildings that no longer exist, kept "
+                       + m_Renderer.TrackedBuildingCount + ".");
+            DesignCanvas.Building = Entity.Null;
+
             if (!mode.IsGame())
             {
                 return;
@@ -214,14 +221,11 @@ namespace SeenBetterDays.Systems
             // The toggle stays for A/B comparison, and belongs in the options page alongside the
             // tooltip switch when that exists.
             Enabled = true;
-            // A save made by an older build can contain both WeatheringState and the vanilla
-            // CustomMeshColor it produced. The in-memory ownership record does not survive a
-            // reload, so applying again would otherwise treat the already dark colour as a new
-            // clean baseline and compound it. Repair those marked leftovers before the first
-            // sweep. Current saves write no WeatheringState and leave only an inactive pristine
-            // vanilla colour buffer.
-            m_LegacyCleanupPending = true;
-            m_FullSweepPending = false;
+            // There used to be a repair here for saves from early development builds, which
+            // wrote WeatheringState into the city. No published version does, so it could only
+            // ever find this session's own state - and on 2026-09-28 it did: stripping 393
+            // buildings in one frame right after load, just before a native crash. Removed.
+            m_FullSweepPending = true;
             m_Pinned.Clear();
 
             Mod.Log.Info("Seen Better Days: on load, " + Census());
@@ -253,23 +257,6 @@ namespace SeenBetterDays.Systems
             if (Mod.ConsumeCityAppearanceResetRequest())
             {
                 ResetAndRebuildCityAppearance();
-                return;
-            }
-
-            if (m_LegacyCleanupPending)
-            {
-                m_LegacyCleanupPending = false;
-                int repaired = ClearPersistedWeatheringOnly();
-                if (repaired > 0)
-                {
-                    m_ResetCooldownUpdates = 2;
-                    Mod.Log.Warn("Seen Better Days: repaired " + repaired
-                               + " persisted weathering override(s) from an older or interrupted "
-                               + "session before applying this version. The old colour was not "
-                               + "used as the new baseline.");
-                }
-
-                m_FullSweepPending = true;
                 return;
             }
 
@@ -612,6 +599,12 @@ namespace SeenBetterDays.Systems
                 float targetSum = 0f;
                 float worst = 0f;
 
+                // The same city under the rule before poor streets depended on level, so the
+                // effect of the change can be read off one load.
+                int[] bucketOld = new int[5];
+                int topLevelWeatheredOld = 0;
+                int topLevelWeathered = 0;
+
                 for (int i = 0; i < buildings.Length; i++)
                 {
                     Entity building = buildings[i];
@@ -639,9 +632,17 @@ namespace SeenBetterDays.Systems
                     bool abandoned = EntityManager.HasComponent<Abandoned>(building);
                     float efficiency = EfficiencyOf(building);
 
-                    float target = WeatheringTarget.Compute(
+                    WeatheringTarget.Parts parts = WeatheringTarget.Explain(
                         condition, abandonCost, spawnable.m_Level, efficiency, abandoned,
-                PovertyOf(building, category), WealthOf(building, category), SeedFor(building));
+                        PovertyOf(building, category), WealthOf(building, category), SeedFor(building));
+                    float target = parts.Target;
+                    float oldTarget = WeatheringTarget.TargetIgnoringLevelOnStreet(parts);
+                    bucketOld[math.clamp((int)BuildingVisualProfile.StateFor(oldTarget), 0, 4)]++;
+                    if (spawnable.m_Level >= 5)
+                    {
+                        if (BuildingVisualProfile.StateFor(oldTarget) != VisualState.Maintained) topLevelWeatheredOld++;
+                        if (BuildingVisualProfile.StateFor(target) != VisualState.Maintained) topLevelWeathered++;
+                    }
 
                     string blocked;
                     if (!m_Renderer.CanWeather(building, out blocked))
@@ -700,6 +701,12 @@ namespace SeenBetterDays.Systems
                     noColourChannels, submeshesDiffer, alreadyOverridden,
                     m_LandValueLow, m_LandValueHigh, m_LandValueMedian, m_LandValueFloor,
                     m_LandValueHighWater, untouched, topLevel)
+                + string.Format(
+                    " | street rule, before / after level counts: Maintained {0}/{5}, Aged {1}/{6},"
+                  + " Worn {2}/{7}, Neglected {3}/{8}, Decayed {4}/{9}; level 5 not Maintained {10}/{11}",
+                    bucketOld[0], bucketOld[1], bucketOld[2], bucketOld[3], bucketOld[4],
+                    bucket[0], bucket[1], bucket[2], bucket[3], bucket[4],
+                    topLevelWeatheredOld, topLevelWeathered)
                 + DescribeCategoryMedians();
             }
             finally
@@ -1416,55 +1423,6 @@ namespace SeenBetterDays.Systems
         public int ResetAll()
         {
             return m_Renderer.RemoveAll();
-        }
-
-        /// <summary>
-        /// Clears only overrides that still carry this mod's serialised WeatheringState marker.
-        /// This runs once after loading and is the migration path from builds that allowed runtime
-        /// colours to enter a save. User recolours on unrelated buildings remain untouched.
-        /// </summary>
-        private int ClearPersistedWeatheringOnly()
-        {
-            NativeArray<Entity> buildings = m_GrowableQuery.ToEntityArray(Allocator.TempJob);
-            try
-            {
-                int cleared = 0;
-
-                for (int i = 0; i < buildings.Length; i++)
-                {
-                    Entity building = buildings[i];
-                    if (!EntityManager.HasComponent<WeatheringState>(building))
-                    {
-                        continue;
-                    }
-
-                    if (EntityManager.HasBuffer<Game.Rendering.CustomMeshColor>(building))
-                    {
-                        EntityManager.RemoveComponent<Game.Rendering.CustomMeshColor>(building);
-                    }
-
-                    if (EntityManager.HasBuffer<PristineMeshColor>(building))
-                    {
-                        EntityManager.RemoveComponent<PristineMeshColor>(building);
-                    }
-
-                    EntityManager.RemoveComponent<WeatheringState>(building);
-
-                    if (!EntityManager.HasComponent<BatchesUpdated>(building))
-                    {
-                        EntityManager.AddComponent<BatchesUpdated>(building);
-                    }
-
-                    cleared++;
-                }
-
-                m_Pinned.Clear();
-                return cleared;
-            }
-            finally
-            {
-                buildings.Dispose();
-            }
         }
 
         /// <summary>Performs the explicit options-page rebuild, then schedules a clean bounded

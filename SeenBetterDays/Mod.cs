@@ -25,7 +25,7 @@ namespace SeenBetterDays
     public class Mod : IMod
     {
         public const string Id = "SeenBetterDays";
-        public const string Version = "0.1.3";
+        public const string Version = "0.1.4";
 
         public static readonly ILog Log = LogManager.GetLogger(Id).SetShowsErrorsInUI(false);
 

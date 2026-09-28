@@ -36,6 +36,18 @@ namespace SeenBetterDays.Simulation
         private static readonly float[] s_LevelFloor = { 0.22f, 0.22f, 0.16f, 0.10f, 0.05f, 0f };
 
         /// <summary>
+        /// How much of the poor-street term applies at each level. A cheap street wears a cheap
+        /// building; it should not make the city's best-off tenants look abandoned. Until
+        /// 2026-09-28 the term ignored level, so a level 5 on one of the cheapest streets of its
+        /// zone type reached Worn on its own, and Neglected with a service missing - reported by
+        /// a player as "rich people with high level looking abandoned". It also broke the rule
+        /// that a level 5 in good condition stays Maintained. Zero at level 5 restores it.
+        /// Level 1 is eased a little too: at full weight the street alone pushed many ordinary
+        /// low-rent blocks to Worn, which read as more neglect than the city actually had.
+        /// </summary>
+        private static readonly float[] s_StreetByLevel = { 0.8f, 0.8f, 0.6f, 0.4f, 0.2f, 0f };
+
+        /// <summary>
         /// Computes the target, 0..1.
         /// </summary>
         /// <param name="condition">The building's <c>BuildingCondition.m_Condition</c>.</param>
@@ -89,8 +101,13 @@ namespace SeenBetterDays.Simulation
             /// <summary>This building's upkeep luck against others like it: below 1 better kept,
             /// above 1 worse.</summary>
             public float Individuality;
-            /// <summary>How far down its own zone type's land values the street sits.</summary>
+            /// <summary>How far down its own zone type's land values the street sits, after the
+            /// building's level has been taken into account.</summary>
             public float PoorStreet;
+
+            /// <summary>The poor-street term as it was before it depended on level. Kept only so
+            /// the load census can compare the old rule with the new one.</summary>
+            public float PoorStreetIgnoringLevel;
             /// <summary>What missing services add.</summary>
             public float Neglect;
         }
@@ -145,7 +162,8 @@ namespace SeenBetterDays.Simulation
 
             // Kept, but small in practice: it can only reach as far as the spread below the median
             // allows, which in a measured city was not far at all.
-            float poorStreet = math.saturate(poverty) * 0.45f;
+            float poorStreetIgnoringLevel = math.saturate(poverty) * 0.45f;
+            float poorStreet = poorStreetIgnoringLevel * s_StreetByLevel[math.clamp(level, 0, s_StreetByLevel.Length - 1)];
 
             // Services failing is weathering the player can see the cause of and fix. Weighted
             // below distress: a building can be perfectly kept and still have a bin strike.
@@ -160,8 +178,22 @@ namespace SeenBetterDays.Simulation
                 Floor = floor,
                 Individuality = individuality,
                 PoorStreet = poorStreet,
+                PoorStreetIgnoringLevel = poorStreetIgnoringLevel,
                 Neglect = neglect,
             };
+        }
+
+        /// <summary>What the target would have been under the rule before poor streets depended
+        /// on level. For the load census's before-and-after comparison only.</summary>
+        public static float TargetIgnoringLevelOnStreet(in Parts parts)
+        {
+            if (parts.Abandoned)
+            {
+                return 1f;
+            }
+
+            return math.saturate(math.max(math.max(parts.Floor, parts.PoorStreetIgnoringLevel), parts.Distress)
+                                 + parts.Neglect * (1f - parts.Distress));
         }
 
         /// <summary>

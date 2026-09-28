@@ -973,6 +973,23 @@ namespace SeenBetterDays.Rendering
             return true;
         }
 
+        /// <summary>
+        /// Drops what is recorded about buildings that no longer exist - the city loaded before -
+        /// without touching any entity, and ends colour editing. Records of buildings that still
+        /// exist are kept: if this runs twice in one city, forgetting them would make the mod read
+        /// its own weathered colours as the player's and darken them again.
+        /// </summary>
+        public int ForgetPreviousCity()
+        {
+            int dropped = PruneOrphans();
+            m_SaveSuspended.Clear();
+            m_SaveCleaned.Clear();
+            m_Deferred.Clear();
+            m_Editing = Entity.Null;
+            m_EditPendingValid = false;
+            return dropped;
+        }
+
         public int RemoveAll()
         {
             int cleared = m_Records.Count;
