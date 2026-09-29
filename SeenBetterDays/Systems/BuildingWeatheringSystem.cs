@@ -183,8 +183,7 @@ namespace SeenBetterDays.Systems
         /// Reports the state of the city once, as soon as it has finished loading.
         ///
         /// This exists to answer one question without anyone having to remember to ask it: does a
-        /// city saved while weathered come back clean? `WeatheringSaveGuardSystem` writes the
-        /// vanilla override inactive and pristine at `SystemUpdatePhase.Serialize`, but whether
+        /// city saved while weathered come back clean? The rendered colour is not saved, but whether
         /// that phase runs before the entity data is written is a claim about the engine. The
         /// proof is the line below reading "0 already recoloured" on a city saved while dirty.
         ///
@@ -244,14 +243,6 @@ namespace SeenBetterDays.Systems
             if (SaveMutationGate.IsBlocked(m_SaveGameSystem))
             {
                 return;
-            }
-
-            int resumedAfterSave = m_Renderer.ResumeAfterSave();
-            if (resumedAfterSave > 0)
-            {
-                Mod.Log.Info("Seen Better Days: re-enabled " + resumedAfterSave
-                           + " weathering colour override(s) after saving without rebuilding "
-                           + "their ECS components.");
             }
 
             if (Mod.ConsumeCityAppearanceResetRequest())
@@ -465,12 +456,9 @@ namespace SeenBetterDays.Systems
             // clean - which is exactly what happened the first time this ran.
             bool colourMissing = next > 0.005f && !m_Renderer.Has(building);
 
-            // Repainted since our last pass - "apply to all similar", Recolor, a paste: weather the
-            // new colour now rather than at the next change of state.
             bool worthRedrawing = colourMissing
                                || firstSight
-                               || math.abs(next - state.m_Weathering) >= RedrawThreshold
-                               || m_Renderer.RepaintedByOthers(building);
+                               || math.abs(next - state.m_Weathering) >= RedrawThreshold;
 
             state.m_Weathering = next;
 
@@ -1259,26 +1247,6 @@ namespace SeenBetterDays.Systems
             return m_Renderer.Describe(building);
         }
 
-        /// <summary>
-        /// Makes this mod's colour overrides inactive while the game snapshots the city.
-        ///
-        /// Called immediately before the game writes a save. `CustomMeshColor` is a vanilla
-        /// component and **is** saved, so a city saved while weathered came back with the
-        /// weathering baked in and no record of what was underneath - 1069 buildings out of 1801
-        /// in one test city, permanently stuck and refused by the mod thereafter.
-        ///
-        /// The first implementation removed and later recreated thousands of buffers and state
-        /// components. That made the saved data clean, but invalidated enough render-side ECS data
-        /// to produce delayed access violations in Burst. CustomMeshColor is enableable, so an
-        /// inactive buffer is the safe representation: it has no visual effect without the mod,
-        /// and changing its enable bit does not move entities between chunks. WeatheringState is a
-        /// runtime-only component and is therefore omitted by the serializer automatically.
-        /// </summary>
-        public int SuspendForSave()
-        {
-            return m_Renderer.SuspendForSave();
-        }
-
         /// <summary>Takes this mod's colour off a building about to be decorated in design mode.
         /// <see cref="Process"/> leaves it alone until design mode ends.</summary>
         public void ClearForDesign(Entity building)
@@ -1338,13 +1306,6 @@ namespace SeenBetterDays.Systems
             {
                 m_Renderer.BeginColourEdit(building);
             }
-        }
-
-        /// <summary>Per-frame work for colour editing: re-weathers buildings after a reset once
-        /// the game has put their palette back.</summary>
-        public void TickColourEdit()
-        {
-            m_Renderer.TickDeferred();
         }
 
         /// <summary>Recomputes the colours of every building this system is weathering, without

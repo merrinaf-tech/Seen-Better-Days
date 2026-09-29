@@ -75,12 +75,13 @@ Hand-made designs are also lighter: placing one took about an eighth of the time
 - **Close-range detail** - the decals, on or off.
 - **Intensity** - from 25% to 200%.
 - **Rebuild Seen Better Days appearance** - clears everything the mod drew and applies it again.
+- **Reset saved building colours** - repairs cities whose colours were saved darkened by versions up to 0.1.4. It resets all custom colours on growable buildings, including your own choices. Back up the city first, then save after using it.
 
 With the game's **Show Advanced** switch on: a tooltip explaining why a building looks the way it does, keys to set a building's state by hand, the design tools and the developer shortcuts. All are off by default.
 
 ## Good to know
 
-This is an early version. Colours you set yourself, in the game or with Recolor, are kept: the mod weathers them instead of replacing them. If something looks wrong, a comment with a screenshot helps a lot.
+This is an early version. Colours you set yourself, in the game or with Recolor, are kept during normal use: the mod weathers them instead of replacing them. To remove Seen Better Days from an affected old city, use **Reset saved building colours**, turn off **Weather buildings**, save, then unsubscribe. If something looks wrong, a comment with a screenshot helps a lot.
 
 Free and open source under the MIT licence: [source on GitHub](https://github.com/merrinaf-tech/Seen-Better-Days).
 	</LongDescription>
@@ -101,7 +102,7 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 	<ExternalLink Type="github" Url="https://github.com/merrinaf-tech/Seen-Better-Days" />
 	<ExternalLink Type="kofi" Url="https://ko-fi.com/fabiozsche" />
 
-	<ModVersion Value="0.1.4" />
+	<ModVersion Value="0.1.5" />
 
 	<!-- Built and verified against game build 1.6.2f1. -->
 	<GameVersion Value="1.6.*" />
@@ -111,7 +112,8 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 
 	<!-- Read by Update and NewVersion only; the first Publish ignores it. -->
 	<ChangeLog>
-- Fixed a crash when loading a city.
-- High-level buildings on cheap streets no longer look run-down.
+	- Fixed building colours becoming faded or black after saving and loading.
+	- Added Reset saved building colours for cities affected by earlier versions. This also resets player-selected growable colours; back up the city first.
+	- Weathering no longer modifies colours saved with the city, allowing clean removal after resetting and saving.
 	</ChangeLog>
 </Publish>

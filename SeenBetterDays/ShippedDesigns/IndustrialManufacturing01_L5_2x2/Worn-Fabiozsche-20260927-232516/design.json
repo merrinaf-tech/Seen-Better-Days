@@ -1,0 +1,389 @@
+{
+  "format": 1,
+  "building": "IndustrialManufacturing01_L5_2x2",
+  "state": "Worn",
+  "author": "Fabiozsche",
+  "created": "2026-09-27T21:25:16Z",
+  "decals": [
+    {
+      "decal": "G87 Moss and Rust Stains G87 Rust 29 12x6 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        -0.813,
+        3.18,
+        -0.194
+      ],
+      "rotation": [
+        0.7070846,
+        0.00560861826,
+        0.005608498,
+        0.7070846
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 14 E L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        0.836,
+        6.744,
+        -0.484
+      ],
+      "rotation": [
+        -0.261034817,
+        0.7348008,
+        0.4859093,
+        -0.3947415
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "Stains and Leakage Decal Pack Stains Stain 1 - Large Decal",
+      "pack": "Stains and Leakage Decal Pack",
+      "position": [
+        0.012,
+        0.206,
+        -1.756
+      ],
+      "rotation": [
+        0.0,
+        -0.00210331753,
+        0.0,
+        0.999997854
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Rust 29 12x6 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        -0.231,
+        2.422,
+        1.853
+      ],
+      "rotation": [
+        0.496025681,
+        -0.496011049,
+        0.503942966,
+        0.5039574
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 21 8x8 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        1.293,
+        3.951,
+        6.166
+      ],
+      "rotation": [
+        0.177482426,
+        0.6844708,
+        0.684470534,
+        0.177482456
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 14 E L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        -1.247,
+        6.914,
+        -6.566
+      ],
+      "rotation": [
+        -0.4587118,
+        0.463217676,
+        -0.306316048,
+        0.693673849
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 25 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        -2.303,
+        1.434,
+        -6.929
+      ],
+      "rotation": [
+        -0.0487189628,
+        0.705426455,
+        -0.705426455,
+        0.04871896
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 24 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        7.105,
+        3.857,
+        -1.716
+      ],
+      "rotation": [
+        0.4964657,
+        0.496465743,
+        -0.5035094,
+        0.5035095
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Rust 10 6x6 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        4.288,
+        2.219,
+        5.996
+      ],
+      "rotation": [
+        -0.707107,
+        -1.86264515E-08,
+        -4.656613E-08,
+        -0.707106769
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 24 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        7.105,
+        3.331,
+        2.332
+      ],
+      "rotation": [
+        0.517735243,
+        0.517735243,
+        -0.4816122,
+        0.481612116
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 13 E M Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        -6.747,
+        6.836,
+        -3.406
+      ],
+      "rotation": [
+        -0.191209465,
+        0.302744031,
+        0.498591244,
+        0.7894249
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 13 E M Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        6.807,
+        6.665,
+        -3.419
+      ],
+      "rotation": [
+        -0.443296671,
+        -0.7018248,
+        0.297779143,
+        -0.471442133
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 25 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        3.392,
+        1.098,
+        -6.929
+      ],
+      "rotation": [
+        0.00224105734,
+        0.7071034,
+        -0.707103252,
+        -0.002241117
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Rust 12 8x8 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        -7.126,
+        2.974,
+        -3.365
+      ],
+      "rotation": [
+        0.5025079,
+        -0.502507865,
+        0.497479528,
+        0.497479558
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 25 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        -7.126,
+        1.219,
+        -4.07
+      ],
+      "rotation": [
+        -0.477711558,
+        0.477711469,
+        -0.521336555,
+        -0.521336436
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Rust 13 4x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        -7.126,
+        3.778,
+        -5.645
+      ],
+      "rotation": [
+        -0.5021048,
+        0.502104759,
+        0.49788624,
+        0.4978863
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 25 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        -6.076,
+        0.986,
+        -6.929
+      ],
+      "rotation": [
+        0.0307153836,
+        0.706439435,
+        -0.7064394,
+        -0.0307153165
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Rust 13 4x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        -6.96,
+        3.785,
+        -6.929
+      ],
+      "rotation": [
+        -0.707088232,
+        0.00511620846,
+        -0.00511627831,
+        0.707088351
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Rust 03 4x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        7.105,
+        1.387,
+        -6.837
+      ],
+      "rotation": [
+        0.009048594,
+        0.009048594,
+        -0.7070489,
+        0.707048953
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ]
+}

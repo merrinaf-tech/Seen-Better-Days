@@ -76,6 +76,18 @@ namespace SeenBetterDays.Localization
                   + "for the original palettes, then applies the current rules again. Colours "
                   + "that have since been replaced by Recolor or another mod are left untouched."
                 },
+                {
+                    m_Settings.GetOptionLabelLocaleID(nameof(SeenBetterDaysSettings.RepairOldColours)),
+                    "Reset saved building colours"
+                },
+                {
+                    m_Settings.GetOptionDescLocaleID(nameof(SeenBetterDaysSettings.RepairOldColours)),
+                    "Versions up to 0.1.4 could save darkened colours with the city. This resets "
+                  + "the custom colour on every growable building, including colours you chose "
+                  + "yourself in the game or with Recolor: old mod colours cannot be identified "
+                  + "after a reload. Back up your city first. Save after the reset. To remove "
+                  + "the mod, turn off Weather buildings, save, then unsubscribe."
+                },
 
                 {
                     m_Settings.GetOptionLabelLocaleID(nameof(SeenBetterDaysSettings.ShowMaintenanceTooltip)),

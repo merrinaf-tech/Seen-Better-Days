@@ -25,7 +25,7 @@ namespace SeenBetterDays
     public class Mod : IMod
     {
         public const string Id = "SeenBetterDays";
-        public const string Version = "0.1.4";
+        public const string Version = "0.1.5";
 
         public static readonly ILog Log = LogManager.GetLogger(Id).SetShowsErrorsInUI(false);
 
@@ -67,6 +67,19 @@ namespace SeenBetterDays
                                                   "ModsData", "SeenBetterDays", "Designs");
             SeenBetterDays.Designs.DesignLibrary.Instance.SetFolders(shipped, local);
             Log.Info("Seen Better Days: designs are read from " + (shipped ?? "(no mod folder)") + " and " + local + ".");
+        }
+
+        private static int s_OldColourRepairRequested;
+
+        /// <summary>Asked from the options: take off custom colours earlier versions left saved.</summary>
+        public static void RequestOldColourRepair()
+        {
+            Interlocked.Exchange(ref s_OldColourRepairRequested, 1);
+        }
+
+        internal static bool ConsumeOldColourRepairRequest()
+        {
+            return Interlocked.Exchange(ref s_OldColourRepairRequested, 0) != 0;
         }
 
         internal static bool ConsumeCityAppearanceResetRequest()
@@ -122,6 +135,11 @@ namespace SeenBetterDays
             // itself is written here with the rest of the weathering.
             updateSystem.UpdateAt<ColourTabBindingSystem>(SystemUpdatePhase.UIUpdate);
             updateSystem.UpdateBefore<ColourEditSystem>(SystemUpdatePhase.ModificationEnd);
+
+            // The weathered colour is applied straight after the game recomputes a building's
+            // rendered colour, in the same frame and before it is drawn.
+            updateSystem.UpdateAfter<WeatheringColourSystem, Game.Rendering.MeshColorSystem>(SystemUpdatePhase.PreCulling);
+            updateSystem.UpdateBefore<OldColourRepairSystem>(SystemUpdatePhase.ModificationEnd);
 
             // Design mode: the panel's bindings in the UI phase, the work with the rest.
             updateSystem.UpdateAt<DesignStudioUISystem>(SystemUpdatePhase.UIUpdate);

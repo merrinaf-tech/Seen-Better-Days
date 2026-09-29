@@ -84,7 +84,9 @@ namespace SeenBetterDays.Systems
             EntityManager.CompleteAllTrackedJobs();
             double synchronizationMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
 
-            int suspended = m_Weathering.SuspendForSave();
+            // Colours need nothing here any more: the weathering lives in the rendered colour, which
+            // the game recomputes from the building's own colour on load (see
+            // MeshColorOverlayRenderer). Only the decal entities are kept out of the save.
             bool decalsExcluded = ExcludeDecalsFromSave();
             int liveDecals = m_OverlayTest.ActiveDecalEntityCount;
 
@@ -101,18 +103,15 @@ namespace SeenBetterDays.Systems
                               + "destroyed during serialization.");
             }
 
-            if (suspended > 0 || liveDecals > 0)
+            if (liveDecals > 0)
             {
-                Mod.Log.Info("Seen Better Days: temporarily disabled " + suspended
-                           + " weathering colour override(s) and "
+                Mod.Log.Info("Seen Better Days: "
                            + (decalsExcluded ? "excluded " : "could not exclude ") + liveDecals
                            + " live decal entit(ies) from the save query in "
                            + stopwatch.Elapsed.TotalMilliseconds.ToString("0.0")
                            + " ms before the serializer created its entity table ("
                            + synchronizationMilliseconds.ToString("0.0")
-                           + " ms waiting for existing ECS jobs). "
-                           + "Colour overrides are re-enabled after serialization without an ECS "
-                           + "component rebuild; live decals are not removed for saving.");
+                           + " ms waiting for existing ECS jobs). Live decals are not removed for saving.");
             }
         }
 

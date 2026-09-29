@@ -9,9 +9,9 @@ situation improves recovers on its own.
 
 ## How it works
 
-- **Colour layer, city-wide.** A per-instance override of the building's own mesh colours
-  (`CustomMeshColor`) darkens, fades and slightly tints each building on its own. Two instances of
-  the same prefab no longer look identical, and no texture or prefab is changed.
+- **Colour layer, city-wide.** The mod darkens, fades and slightly tints each building's rendered
+  mesh colours without changing the colours saved with the city. Two instances of the same prefab
+  no longer look identical, and no texture or prefab is changed.
 - **Detail layer, near the camera.** Within about 200 m, weathered buildings receive decals placed
   on wall surfaces; beyond 280 m they are removed. Placement is deterministic, so a wall gets
   the same marks every time the camera comes back.
@@ -19,9 +19,8 @@ situation improves recovers on its own.
   building's clean colour and is weathered on top. While the panel's Customize tab is open the
   building shows its clean colour, so the panel reads and edits that rather than the weathered one
   (the small UI module `SeenBetterDays.mjs` reports the tab, which the game keeps to its UI).
-- **Saving.** Colour overrides are put back to the clean colour while the game writes a save:
-  switched off where that colour is the prefab's own, left on where the player chose it. The mod's
-  decal entities are left out of the save.
+- **Saving.** Weathering is applied to rendered colours after the game computes them and is not
+  stored in the city. The mod's decal entities are left out of the save.
 
 ## States and decal packs
 
@@ -50,11 +49,17 @@ since their names carry no keyword; brick walls, rusty roofs and hazard stripes 
 | Close-range detail | On | Enables the decal layer. |
 | Intensity | 100% | Scales colour and decal strength from 25% to 200%. |
 | Rebuild Seen Better Days appearance | - | Removes everything the mod drew and applies the current rules again. |
+| Reset saved building colours | - | Repairs colours baked into saves by versions up to 0.1.4. Also resets colours you chose on growable buildings; back up your city first. Save afterwards. |
 | Show maintenance in the tooltip | Off | *Advanced.* How weathered a building is, and why. |
 | Set a building's state by hand | Off | *Advanced.* Ctrl+Alt+F1-F5 hold the selected building at a state, F6 releases it. |
 | Developer shortcuts | Off | *Advanced.* The Ctrl+Alt keys used to develop and tune the mod. |
 | Design tools | Off | *Advanced.* Design mode for hand-made designs: Ctrl+Alt+M on a selected building. |
 | Designer name | - | *Advanced, with Design tools.* Written into exported designs and shown on hover. Asked once at the first export; empty stays anonymous. |
+
+For a clean removal from a city saved with version 0.1.4 or earlier, back up the city, use
+**Reset saved building colours**, turn off **Weather buildings**, save, then unsubscribe. The reset
+also removes colours you chose yourself on growable buildings because old mod colours cannot be
+identified after loading.
 
 ## Hand-made designs
 

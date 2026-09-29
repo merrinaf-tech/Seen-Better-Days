@@ -81,6 +81,18 @@ namespace SeenBetterDays.Settings
         }
 
         /// <summary>
+        /// Resets custom colours on all growable buildings, including player choices. The old
+        /// mod's runtime-only marker is absent after loading, so its colours cannot be singled out.
+        /// </summary>
+        [SettingsUISection(MainSection, ResetGroup)]
+        [SettingsUIButton]
+        [SettingsUIConfirmation]
+        public bool RepairOldColours
+        {
+            set { Mod.RequestOldColourRepair(); }
+        }
+
+        /// <summary>
         /// Shows, under the cursor, how well kept the game thinks a building is and why.
         ///
         /// Off by default. It is genuinely useful - it is the only way to check that a colour on a

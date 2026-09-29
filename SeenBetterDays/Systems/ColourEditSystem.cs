@@ -75,8 +75,6 @@ namespace SeenBetterDays.Systems
                 }
             }
 
-            m_Weathering.TickColourEdit();
-
             if (m_PanelRefreshFrames > 0 && --m_PanelRefreshFrames == 0)
             {
                 m_SelectedInfo.RequestUpdate();
