@@ -115,6 +115,12 @@
 		      Condition="'@(ShippedDesign)' != ''" />
 	</Target>
 
+	<!-- Keep the public count in sync with the design files shipped in a new version. -->
+	<Target Name="CheckPublishedDesignCount" BeforeTargets="Publish"
+	        Condition="'$(ModPublisherCommand)' != ''">
+		<Exec Command="powershell -NoProfile -File &quot;$(MSBuildProjectDirectory)\..\tools\check-shipped-design-count.ps1&quot; -ConfigPath &quot;$(MSBuildProjectDirectory)\Properties\PublishConfiguration.xml&quot; -DesignRoot &quot;$(MSBuildProjectDirectory)\ShippedDesigns&quot;" />
+	</Target>
+
 	<Target Name="RemoveSymbolsBeforeDeploy" AfterTargets="RunModPostProcessor" BeforeTargets="DeployWIP">
 		<ItemGroup>
 			<SymbolsToStrip Include="$(OutDir)**\*.pdb" />
