@@ -61,8 +61,6 @@ Each state keeps what the one before it had and adds its own marks. Decals come 
 
 Random placement is only the start. A building can also get designs made by hand. When a building has a design for its state, the mod uses it; when it has none, it keeps placing decals at random.
 
-The first shipped design is for the Worn state of IndustrialManufacturing01_L5_2x2. It is used when that building and all three decal packs it uses are installed; otherwise the building keeps its random detail.
-
 The base game, its DLC and the official region packs together have about **3,450 different building models**, and each has four states that carry decals: nearly 14,000 possible designs. This is a long-term project: I will add them a few at a time, starting with the buildings that inspire me most and the ones the mod handles worst.
 
 Hand-made designs are also lighter: placing one took about an eighth of the time of a random placement in testing, because the mod no longer has to study the walls.
@@ -117,5 +115,6 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 	- Fixed building colours becoming faded or black after saving and loading.
 	- Added Reset saved building colours for cities affected by earlier versions. This also resets player-selected growable colours; back up the city first.
 	- Weathering no longer modifies colours saved with the city, allowing clean removal after resetting and saving.
+	- Added a Worn design for IndustrialManufacturing01_L5_2x2, by Fabiozsche.
 	</ChangeLog>
 </Publish>

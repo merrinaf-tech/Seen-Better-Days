@@ -71,6 +71,9 @@ model share designs.
 
 - **Shipped designs** live in `SeenBetterDays/ShippedDesigns/<building>/<design>/design.json` and
   are deployed to the mod's `Designs` folder.
+  When publishing a new one, update the count in the mod description and credit its author in a
+  brief changelog entry; keep individual design details out of the description. See
+  [publishing notes](tools/publishing.md).
 - **A player's designs** are exported to `ModsData/SeenBetterDays/Designs`, with a 1280 px JPEG
   screenshot, and a zip of the two is put in `ModsData/SeenBetterDays/To send` for the forum. They
   are used in the player's city at once. A player's copy of a design that also ships with the
