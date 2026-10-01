@@ -11,10 +11,22 @@
 #
 # Run it by hand any time with:
 #   sh tools/check-public-repo.sh
+#
+# Patterns that only matter on this machine go in .git/info/forbidden, one extended regex per
+# line. That file is not versioned.
 
 set -e
 
-FORBIDDEN='(^|/)_dev/|(^|/)(AGENTS|DESIGN|CLAUDE|NOTES|TODO|SESSION|LESSONS)\.md$|(^|/)Library/|\.pid$|(^|/)(bin|obj)/|\.user$|(^|/)UI/dist/|(^|/)node_modules/|(^|/)__pycache__/|\.pyc$|\.zip$'
+FORBIDDEN='(^|/)_dev/|(^|/)(DESIGN|NOTES|TODO|SESSION|LESSONS)\.md$|(^|/)Library/|\.pid$|(^|/)(bin|obj)/|\.user$|(^|/)UI/dist/|(^|/)node_modules/|(^|/)__pycache__/|\.pyc$|\.zip$'
+
+LOCAL="$(git rev-parse --git-dir)/info/forbidden"
+if [ -f "$LOCAL" ]; then
+	extra=$(grep -v '^#' "$LOCAL" | grep -v '^[[:space:]]*$' | tr '
+' '|' | sed 's/|$//')
+	if [ -n "$extra" ]; then
+		FORBIDDEN="$FORBIDDEN|$extra"
+	fi
+fi
 
 found=$(git ls-files | grep -Ei "$FORBIDDEN" || true)
 
