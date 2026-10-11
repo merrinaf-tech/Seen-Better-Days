@@ -1,0 +1,269 @@
+{
+  "format": 1,
+  "building": "FR_OfficeHigh01_L2_3x2",
+  "state": "Aged",
+  "author": "Fabiozsche",
+  "created": "2026-10-11T16:35:49Z",
+  "decals": [
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 03 A L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        1.708,
+        7.937,
+        2.0
+      ],
+      "rotation": [
+        0.0926282853,
+        -0.701013565,
+        0.7010137,
+        -0.09262836
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 46 Wide Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        2.63,
+        18.309,
+        2.0
+      ],
+      "rotation": [
+        0.0166740716,
+        -0.706910253,
+        0.706910253,
+        -0.0166740417
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 09 C L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        -0.456,
+        25.549,
+        4.323
+      ],
+      "rotation": [
+        -0.0313427225,
+        0.915501952,
+        0.0727472,
+        -0.3944387
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 46 Wide Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        2.597,
+        25.566,
+        4.216
+      ],
+      "rotation": [
+        0.005519593,
+        -0.9944349,
+        -0.07901929,
+        0.06946328
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 06 B L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        -7.601,
+        12.016,
+        2.0
+      ],
+      "rotation": [
+        -0.11041379,
+        -0.698433042,
+        0.6984333,
+        0.11041382
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 20 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        0.064,
+        5.168,
+        8.02
+      ],
+      "rotation": [
+        -0.7064636,
+        -0.0301556289,
+        -0.03015545,
+        -0.7064636
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 21 8x8 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        -3.191,
+        11.612,
+        8.13
+      ],
+      "rotation": [
+        -0.471146077,
+        0.52727735,
+        0.527277231,
+        -0.471146315
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 20 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        5.113,
+        5.008,
+        8.02
+      ],
+      "rotation": [
+        -0.7064636,
+        -0.0301556,
+        -0.03015545,
+        -0.7064636
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "Stains and Leakage Decal Pack Stains Leakage 1 - Large Decal",
+      "pack": "Stains and Leakage Decal Pack",
+      "position": [
+        5.219,
+        18.254,
+        8.0
+      ],
+      "rotation": [
+        0.0,
+        0.707107246,
+        0.707106531,
+        -1.78813934E-07
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 20 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        -5.211,
+        5.367,
+        8.02
+      ],
+      "rotation": [
+        -0.7064636,
+        -0.0301556885,
+        -0.0301556885,
+        -0.7064636
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 21 8x8 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        5.132,
+        11.589,
+        8.106
+      ],
+      "rotation": [
+        -0.471149,
+        0.5272748,
+        0.5272754,
+        -0.471148521
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "Stains and Leakage Decal Pack Stains Leakage 1 - Large Decal",
+      "pack": "Stains and Leakage Decal Pack",
+      "position": [
+        -5.41,
+        18.249,
+        8.0
+      ],
+      "rotation": [
+        -0.00269195437,
+        0.7071017,
+        0.7071018,
+        -0.00269192457
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 21 8x8 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        9.795,
+        11.561,
+        8.106
+      ],
+      "rotation": [
+        -0.4711463,
+        0.527277231,
+        0.5272773,
+        -0.471146226
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ]
+}

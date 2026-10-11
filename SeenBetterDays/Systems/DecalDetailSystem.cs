@@ -13,6 +13,7 @@ using UnityEngine.Scripting;
 using SeenBetterDays.Data;
 using SeenBetterDays.Geometry;
 using SeenBetterDays.Rendering;
+using SeenBetterDays.Simulation;
 
 namespace SeenBetterDays.Systems
 {
@@ -39,15 +40,20 @@ namespace SeenBetterDays.Systems
     public partial class DecalDetailSystem : GameSystemBase
     {
         /// <summary>Close enough that the marks are worth placing.</summary>
-        private const float NearRadius = 200f;
+        public const float NearRadius = 200f;
 
         /// <summary>Far enough to take them away again. The gap between the two is deliberate:
         /// with a single radius a building sitting exactly on it would be built and destroyed on
         /// alternate passes for as long as the player stood still.</summary>
         private const float FarRadius = 280f;
 
-        /// <summary>Buildings looked at per update.</summary>
-        private const int ScanPerUpdate = 128;
+        /// <summary>
+        /// Buildings looked at per update. This system runs every frame - the update interval
+        /// below is not honoured in this phase - so 128 swept a city of 2600 growables every 20
+        /// frames. At 32 the sweep takes about a second and a half, still quick enough to follow
+        /// the camera, for a quarter of the work.
+        /// </summary>
+        private const int ScanPerUpdate = 32;
 
         /// <summary>
         /// How many expensive placement attempts may run per update. Count attempts rather than
@@ -80,6 +86,9 @@ namespace SeenBetterDays.Systems
         private BuildingOverlayTestSystem m_Harness;
         private EntityQuery m_GrowableQuery;
         private EntityQuery m_UnderConstructionQuery;
+        private EntityQuery m_GarbageParametersQuery;
+        private GarbageParameterData m_GarbageParameters;
+        private bool m_HasGarbageParameters;
         private int m_Cursor;
 
         /// <summary>
@@ -92,6 +101,7 @@ namespace SeenBetterDays.Systems
         private int m_Built;
         private int m_PlacementAttempts;
         private int m_Removed;
+        private int m_StateChanged;
         private int m_InRange;
         private int m_BelowThreshold;
         private int m_MeshNotReady;
@@ -128,6 +138,7 @@ namespace SeenBetterDays.Systems
             public uint WeatheringBits;
             public uint Seed;
             public uint IntensityBits;
+            public byte GarbageTier;
         }
 
         private readonly Dictionary<Entity, RejectedPlacement> m_RejectedPlacements =
@@ -173,6 +184,8 @@ namespace SeenBetterDays.Systems
                     ComponentType.ReadOnly<Temp>(),
                 },
             });
+
+            m_GarbageParametersQuery = GetEntityQuery(ComponentType.ReadOnly<GarbageParameterData>());
 
             RequireForUpdate(m_GrowableQuery);
         }
@@ -222,6 +235,12 @@ namespace SeenBetterDays.Systems
                 }
 
                 return;
+            }
+
+            m_HasGarbageParameters = !m_GarbageParametersQuery.IsEmptyIgnoreFilter;
+            if (m_HasGarbageParameters)
+            {
+                m_GarbageParameters = m_GarbageParametersQuery.GetSingleton<GarbageParameterData>();
             }
 
             RemoveConstructionDetails(renderer);
@@ -287,6 +306,37 @@ namespace SeenBetterDays.Systems
                         continue;
                     }
 
+                    // Marks planned for another state come off, and the building is planned again
+                    // below for the one it is in now - none at Maintained. Without this a building
+                    // kept the marks it got first until the camera left: an office that ran out of
+                    // supplies stayed covered in graffiti after it recovered.
+                    VisualState placedState;
+                    if (has && EntityManager.HasComponent<WeatheringState>(building)
+                        && renderer.TryGetPlacedState(building, out placedState)
+                        && placedState != BuildingVisualProfile.StateFor(
+                               EntityManager.GetComponentData<WeatheringState>(building).m_Weathering))
+                    {
+                        if (renderer.Remove(building))
+                        {
+                            m_StateChanged++;
+                        }
+
+                        has = false;
+                    }
+
+                    byte currentGarbageTier = GarbageTierOf(building);
+                    byte placedGarbageTier;
+                    if (has && renderer.TryGetGarbageTier(building, out placedGarbageTier)
+                        && placedGarbageTier != currentGarbageTier)
+                    {
+                        if (renderer.Remove(building))
+                        {
+                            m_StateChanged++;
+                        }
+
+                        has = false;
+                    }
+
                     if (distance <= NearRadius)
                     {
                         m_InRange++;
@@ -340,6 +390,7 @@ namespace SeenBetterDays.Systems
                            + m_PlacementAttempts
                            + " placement attempt(s), " + m_Removed
                            + " removed after leaving the radius, "
+                           + m_StateChanged + " cleared for a change of state, "
                            + renderer.TrackedBuildingCount + " currently detailed, "
                            + m_InRange + " seen in range, "
                            + m_BelowThreshold + " too lightly weathered to bother, "
@@ -365,6 +416,7 @@ namespace SeenBetterDays.Systems
                 m_Built = 0;
                 m_PlacementAttempts = 0;
                 m_Removed = 0;
+                m_StateChanged = 0;
                 m_DesignsPlaced = 0;
                 m_InRange = 0;
                 m_BelowThreshold = 0;
@@ -433,7 +485,8 @@ namespace SeenBetterDays.Systems
             if (EntityManager.HasComponent<WeatheringState>(building)
                 && BuildingVisualProfile.StateFor(
                     EntityManager.GetComponentData<WeatheringState>(building).m_Weathering)
-                    == VisualState.Maintained)
+                    == VisualState.Maintained
+                && GarbageTierOf(building) == 0)
             {
                 report = "nothing to place at Maintained";
                 return false;
@@ -484,7 +537,9 @@ namespace SeenBetterDays.Systems
             // Maintained has every decal family hard-gated to zero. Treating 8-12% as eligible
             // made the renderer correctly decline the empty profile, but the status report then
             // called that expected result a placement failure on every scan.
-            if (BuildingVisualProfile.StateFor(state.m_Weathering) == VisualState.Maintained)
+            byte garbageTier = GarbageTierOf(building);
+            if (BuildingVisualProfile.StateFor(state.m_Weathering) == VisualState.Maintained
+                && garbageTier == 0)
             {
                 m_BelowThreshold++;
                 return false;
@@ -529,7 +584,8 @@ namespace SeenBetterDays.Systems
             {
                 if (rejected.WeatheringBits == weatheringBits
                     && rejected.Seed == profile.Seed
-                    && rejected.IntensityBits == intensityBits)
+                    && rejected.IntensityBits == intensityBits
+                    && rejected.GarbageTier == garbageTier)
                 {
                     m_SuppressedRetries++;
                     return false;
@@ -549,7 +605,8 @@ namespace SeenBetterDays.Systems
             // The first building of a type needs its walls surveyed, which is the expensive part.
             // Ask for it and move on; FacadeSurveySystem does it in small slices, and this
             // building is detailed on a later pass. Not an attempt, and not a failure.
-            if (design == null && automaticPlacement && !renderer.HasSurfaceTemplate(building))
+            if ((design == null || garbageTier > 0) && automaticPlacement
+                && !renderer.HasSurfaceTemplate(building))
             {
                 renderer.RequestSurfaceTemplate(building);
                 m_AwaitingSurvey++;
@@ -561,8 +618,8 @@ namespace SeenBetterDays.Systems
             attemptedPlacement = true;
             long applyStarted = Stopwatch.GetTimestamp();
             bool applied = design != null
-                ? renderer.ApplyDesign(building, profile, design, out placed, out failure)
-                : renderer.Apply(building, profile, out placed, out failure);
+                ? renderer.ApplyDesign(building, profile, design, garbageTier, out placed, out failure)
+                : renderer.Apply(building, profile, garbageTier, out placed, out failure);
             double applyMs = (Stopwatch.GetTimestamp() - applyStarted) * 1000d / Stopwatch.Frequency;
             if (design != null && applied)
             {
@@ -620,6 +677,7 @@ namespace SeenBetterDays.Systems
                         WeatheringBits = weatheringBits,
                         Seed = profile.Seed,
                         IntensityBits = intensityBits,
+                        GarbageTier = garbageTier,
                     };
                 }
 
@@ -629,6 +687,16 @@ namespace SeenBetterDays.Systems
             m_RejectedPlacements.Remove(building);
 
             return true;
+        }
+
+        private byte GarbageTierOf(Entity building)
+        {
+            if (!m_HasGarbageParameters || (Mod.Settings != null && !Mod.Settings.EnableGarbageLitter))
+            {
+                return 0;
+            }
+
+            return GarbageSignal.Tier(EntityManager, building, m_GarbageParameters);
         }
 
         [Preserve]

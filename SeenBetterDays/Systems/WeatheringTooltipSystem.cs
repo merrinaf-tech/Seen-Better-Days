@@ -25,9 +25,7 @@ namespace SeenBetterDays.Systems
     {
         private ToolRaycastSystem m_RaycastSystem;
         private BuildingWeatheringSystem m_Weathering;
-        private StringTooltip m_Tooltip;
         private StringTooltip m_CreditTooltip;
-        private BuildingOverlayTestSystem m_Overlays;
 
         [Preserve]
         protected override void OnCreate()
@@ -36,9 +34,7 @@ namespace SeenBetterDays.Systems
 
             m_RaycastSystem = World.GetOrCreateSystemManaged<ToolRaycastSystem>();
             m_Weathering = World.GetOrCreateSystemManaged<BuildingWeatheringSystem>();
-            m_Tooltip = new StringTooltip { path = "seenBetterDays.maintenance" };
             m_CreditTooltip = new StringTooltip { path = "seenBetterDays.designCredit" };
-            m_Overlays = World.GetOrCreateSystemManaged<BuildingOverlayTestSystem>();
         }
 
         [Preserve]
@@ -61,22 +57,37 @@ namespace SeenBetterDays.Systems
                 return;
             }
 
-            // The maintenance tooltip already names the designer on its decals line.
+            // Design authors are credited even when the optional building summary is disabled.
             if (!Mod.Settings.ShowMaintenanceTooltip)
             {
                 ShowDesignCredit(building);
                 return;
             }
 
-            string text;
-            if (!m_Weathering.TryDescribeMaintenance(building, out text))
+            if (!m_Weathering.TryDescribeMaintenance(building, m_Rows))
             {
                 return;
             }
 
-            m_Tooltip.value = text;
-            AddMouseTooltip(m_Tooltip);
+            for (int i = 0; i < m_Rows.Count; i++)
+            {
+                if (i == m_RowTooltips.Count)
+                {
+                    m_RowTooltips.Add(new StringTooltip { path = "seenBetterDays.maintenance" + i });
+                }
+
+                StringTooltip tooltip = m_RowTooltips[i];
+                tooltip.icon = m_Rows[i].Icon;
+                tooltip.value = m_Rows[i].Text;
+                tooltip.color = m_Rows[i].Color;
+                AddMouseTooltip(tooltip);
+            }
         }
+
+        private readonly System.Collections.Generic.List<MaintenanceRow> m_Rows =
+            new System.Collections.Generic.List<MaintenanceRow>();
+        private readonly System.Collections.Generic.List<StringTooltip> m_RowTooltips =
+            new System.Collections.Generic.List<StringTooltip>();
 
         /// <summary>
         /// Walks up from whatever the cursor actually hit to the building that owns it.
@@ -93,13 +104,13 @@ namespace SeenBetterDays.Systems
         private void ShowDesignCredit(Entity building)
         {
             string author;
-            Rendering.DecalObjectOverlayRenderer decals = m_Overlays != null ? m_Overlays.DecalRenderer : null;
-            if (decals == null || !decals.TryGetDesign(building, out author) || string.IsNullOrEmpty(author))
+            if (m_Weathering == null || !m_Weathering.TryGetDesignAuthor(building, out author))
             {
                 return;
             }
 
-            m_CreditTooltip.value = "Decals designed by " + author;
+            m_CreditTooltip.icon = TooltipIcons.Author;
+            m_CreditTooltip.value = "Author: " + (string.IsNullOrEmpty(author) ? "?" : author);
             AddMouseTooltip(m_CreditTooltip);
         }
 

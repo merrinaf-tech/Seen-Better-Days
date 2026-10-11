@@ -13,12 +13,17 @@ situation improves recovers on its own.
   mesh colours without changing the colours saved with the city. Two instances of the same prefab
   no longer look identical, and no texture or prefab is changed.
 - **Detail layer, near the camera.** Within about 200 m, weathered buildings receive decals placed
-  on wall surfaces; beyond 280 m they are removed. Placement is deterministic, so a wall gets
+  on wall surfaces and on the ground of their lot; beyond 280 m they are removed. When a building
+  changes state its decals are planned again. Placement is deterministic, so a wall gets
   the same marks every time the camera comes back.
 - **Player colours.** A colour set in the game's colour panel or with Recolor becomes the
   building's clean colour and is weathered on top. While the panel's Customize tab is open the
   building shows its clean colour, so the panel reads and edits that rather than the weathered one
   (the small UI module `SeenBetterDays.mjs` reports the tab, which the game keeps to its UI).
+- **Litter.** Garbage a building has not had collected adds litter on its lot and at the foot of
+  its walls up close: three pieces from 30% of what it can hold, six from 50%, ten from 75%, from
+  [[G87] Trash Decals](https://mods.paradoxplaza.com/mods/87720/Windows). From the game's own garbage
+  warning it also adds a little weathering.
 - **Saving.** Weathering is applied to rendered colours after the game computes them and is not
   stored in the city. The mod's decal entities are left out of the save.
 
@@ -47,10 +52,11 @@ since their names carry no keyword; brick walls, rusty roofs and hazard stripes 
 |---|---:|---|
 | Weather buildings | On | Enables or removes the whole effect, live. |
 | Close-range detail | On | Enables the decal layer. |
+| Litter from accumulated garbage | On | Litter on lots and low walls as garbage piles up. |
+| Show compact building tooltip | Off | State, garbage, colour, decals and cause under the cursor, one row each. Design credits show either way. |
 | Intensity | 100% | Scales colour and decal strength from 25% to 200%. |
 | Rebuild Seen Better Days appearance | - | Removes everything the mod drew and applies the current rules again. |
 | Reset saved building colours | - | Repairs colours baked into saves by versions up to 0.1.4. Also resets colours you chose on growable buildings; back up your city first. Save afterwards. |
-| Show maintenance in the tooltip | Off | *Advanced.* How weathered a building is, and why. |
 | Set a building's state by hand | Off | *Advanced.* Ctrl+Alt+F1-F5 hold the selected building at a state, F6 releases it. |
 | Developer shortcuts | Off | *Advanced.* The Ctrl+Alt keys used to develop and tune the mod. |
 | Design tools | Off | *Advanced.* Design mode for hand-made designs: Ctrl+Alt+M on a selected building. |

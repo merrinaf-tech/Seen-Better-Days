@@ -62,6 +62,7 @@ const capturing$ = api.bindValue(GROUP, "designCapturing", false);
 const designs$ = api.bindValue(GROUP, "designList", "[]");
 const askName$ = api.bindValue(GROUP, "designAskName", false);
 const suggestedName$ = api.bindValue(GROUP, "designSuggestedName", "");
+const exitQuestion$ = api.bindValue(GROUP, "designExitQuestion", "");
 
 // Visual state numbers, as in SeenBetterDays.Data.VisualState.
 const STATES = [
@@ -126,13 +127,17 @@ function gameTextInput() {
   }
 }
 
-function Button({ label, onClick, width, marginRight }) {
+// primary: the action expected in most cases, drawn in the game's accent green.
+function Button({ label, onClick, width, marginRight, primary }) {
   const [hover, setHover] = React.useState(false);
+  const idle = primary ? "rgba(57, 181, 74, 0.85)" : buttonBase.backgroundColor;
+  const lit = primary ? "rgba(77, 205, 94, 1)" : "rgba(255, 255, 255, 0.24)";
   const style = {
     ...buttonBase,
     width: width + "rem",
     marginRight: (marginRight || 0) + "rem",
-    backgroundColor: hover ? "rgba(255, 255, 255, 0.24)" : buttonBase.backgroundColor,
+    backgroundColor: hover ? lit : idle,
+    fontWeight: primary ? "bold" : undefined,
   };
   return h("div", { style, onClick, onMouseEnter: () => setHover(true), onMouseLeave: () => setHover(false) }, label);
 }
@@ -229,11 +234,28 @@ function NamePrompt() {
   );
 }
 
+// Asked on leaving when decals were placed in design mode. Those placed before it are never
+// removed, so only these are offered.
+function ExitQuestion({ question }) {
+  return h(
+    "div",
+    { style: sectionStyle },
+    h("div", { style: { width: INNER + "rem" } }, question),
+    // Removing is what a designer wants almost every time: the canvas is for exporting, and
+    // decals left behind stay in the city. It is the highlighted choice. Decals that were on the
+    // building before design mode are never removed, so it cannot cost older work.
+    h("div", { style: rowStyle }, h(Button, { label: "Remove them and exit", width: INNER, primary: true, onClick: () => trigger("designExitRemove") })),
+    h("div", { style: rowStyle }, h(Button, { label: "Keep them and exit", width: INNER, onClick: () => trigger("designExitKeep") })),
+    h("div", { style: rowStyle }, h(Button, { label: "Stay in design mode", width: INNER, onClick: () => trigger("designExitCancel") }))
+  );
+}
+
 function DesignPanel() {
   const building = api.useValue(building$);
   const message = api.useValue(message$);
   const capturing = api.useValue(capturing$);
   const askName = api.useValue(askName$);
+  const exitQuestion = api.useValue(exitQuestion$);
   const [collapsed, setCollapsed] = React.useState(false);
   const [choosing, setChoosing] = React.useState(false);
 
@@ -249,8 +271,13 @@ function DesignPanel() {
     h(Button, { label: collapsed ? "+" : "-", width: 28, onClick: () => setCollapsed(!collapsed) })
   );
 
-  if (collapsed) {
+  if (collapsed && !exitQuestion) {
     return h("div", { style: panelStyle }, header);
+  }
+
+  // The question replaces the panel's buttons until it is answered.
+  if (exitQuestion) {
+    return h("div", { style: panelStyle }, header, h("div", { style: buildingStyle }, building), h(ExitQuestion, { question: exitQuestion }));
   }
 
   return h(

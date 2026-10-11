@@ -59,6 +59,10 @@ namespace SeenBetterDays.Rendering
         /// </summary>
         private const int MaxPerBuilding = 24;
 
+        /// <summary>How much larger than a facade a decal may be, in each direction. See
+        /// TryPlanMarkOnFacade.</summary>
+        private const float MaxOverhang = 2f;
+
         /// <summary>
         /// Local wall samples are shared by every instance of a prefab. Keep the cache bounded by
         /// point count rather than prefab count: a simple house and a complex station differ by
@@ -74,6 +78,7 @@ namespace SeenBetterDays.Rendering
         private sealed class OverlayRecord
         {
             public BuildingVisualProfile Profile;
+            public byte GarbageTier;
 
             /// <summary>The hand-made design placed, or null for random placement.</summary>
             public SeenBetterDays.Designs.DesignLibrary.Resolved Design;
@@ -87,6 +92,42 @@ namespace SeenBetterDays.Rendering
             public quaternion Rotation;
             public OverlayFamily Family;
             public int FacadeIndex;
+
+            /// <summary>The decal's larger side, in metres, for the spacing rule.</summary>
+            public float Extent;
+
+            /// <summary>A hand-made design's seed for this decal plus one, or 0 to derive one from
+            /// the building. Random marks may differ from building to building; a design may not.</summary>
+            public int DesignSeedPlusOne;
+        }
+
+        /// <summary>
+        /// How close two marks on the same facade, or on the lot, may stand: their centres at
+        /// least this share of their average size apart, so they may overlap by up to about 60%
+        /// but not pile up. Seen on 2026-10-02: a Decayed house carried 24 marks heaped on one
+        /// wall. A mark that has no room tries another facade, which spreads them round the
+        /// building. 0.6 spread them well but left visibly fewer marks; 0.4 is the middle.
+        /// </summary>
+        private const float MarkSpacing = 0.4f;
+
+        private bool TooCloseToPlanned(float3 position, float extent, int facadeIndex)
+        {
+            for (int i = 0; i < m_Pending.Count; i++)
+            {
+                PendingElement other = m_Pending[i];
+                if (other.FacadeIndex != facadeIndex)
+                {
+                    continue;
+                }
+
+                float minimum = MarkSpacing * 0.5f * (extent + other.Extent);
+                if (math.distancesq(position, other.Position) < minimum * minimum)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private readonly EntityManager m_EntityManager;
@@ -234,6 +275,11 @@ namespace SeenBetterDays.Rendering
 
         public bool Apply(Entity building, in BuildingVisualProfile profile, out int placed, out string failureReason)
         {
+            return Apply(building, profile, 0, out placed, out failureReason);
+        }
+
+        public bool Apply(Entity building, in BuildingVisualProfile profile, byte garbageTier, out int placed, out string failureReason)
+        {
             placed = 0;
             failureReason = null;
 
@@ -243,6 +289,8 @@ namespace SeenBetterDays.Rendering
                 return false;
             }
 
+            long prepareStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            m_RemoveTicks = 0;
             if (!TryResolveAllFacades(building, out failureReason))
             {
                 return false;
@@ -253,26 +301,32 @@ namespace SeenBetterDays.Rendering
             // walks the rendered mesh. The proximity system may revisit such a building often;
             // the old order paid for the full mesh scan every time even though placement was
             // geometrically impossible.
-            if (ForcedDecal == null
-                && !AllowNonBuildingDecals
-                && !HasFittingAutomaticDecal(profile))
-            {
-                failureReason = "no approved active decal fits any facade";
-                return false;
-            }
+            // When no wall decal fits, the walls are skipped - but not the building: its lot can
+            // still take ground decals, which is often all a small house can carry.
+            bool automatic = ForcedDecal == null && !AllowNonBuildingDecals;
+            bool wallsPossible = !automatic || HasFittingAutomaticDecal(profile) || garbageTier > 0;
 
             m_Pending.Clear();
             m_PlanState = profile.State;
             Unity.Mathematics.Random rng = new Unity.Mathematics.Random(profile.Seed == 0u ? 1u : profile.Seed);
 
             m_LastFamilies.Clear();
-            PrepareSurfaceTemplate(building);
+            if (wallsPossible)
+            {
+                PrepareSurfaceTemplate(building);
+            }
+
+            m_PrepareTicks = System.Diagnostics.Stopwatch.GetTimestamp() - prepareStarted;
             m_SurfaceHits = 0;
             m_SurfaceRecoveries = 0;
             m_SurfaceMisses = 0;
             m_SurfaceSides = 0;
             m_Raycasts = 0;
             m_RaycastTicks = 0;
+            m_GroundSetupTicks = 0;
+            m_PickTicks = 0;
+            m_WallPlanTicks = 0;
+            m_GroundPlanTicks = 0;
             m_TriangleSearches = 0;
             m_TriangleTicks = 0;
             m_SpawnTicks = 0;
@@ -280,6 +334,16 @@ namespace SeenBetterDays.Rendering
             m_FacadeSequenceStep = 0;
             m_FrontMarkCount = 0;
             m_FrontGraffitiCount = 0;
+
+            // Specific litter gets its own small, increasing budget. Put it on the lot and at
+            // arm's reach on the road-facing wall before ordinary weathering shares the remainder.
+            if (automatic && garbageTier > 0)
+            {
+                PlanGround(building, profile, ref rng, garbageTier, true, MaxPerBuilding);
+                PlanGarbageWalls(building, garbageTier, MaxPerBuilding, ref rng);
+            }
+
+            int garbageGroundMarks = m_Pending.Count;
 
             // The nominal Front is the side presented to the road. Starting at a random side
             // sounded varied, but on long narrow growables it made the first (and often only)
@@ -290,6 +354,44 @@ namespace SeenBetterDays.Rendering
             // Aged has only cracks available. Reserve one on the road-facing wall before the
             // round-robin spends its small budget on the long sides; later states have additional
             // families that already give the recovery pass several ways to fill the front.
+            long wallsStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (wallsPossible)
+            {
+                PlanWalls(building, profile, ref rng);
+            }
+
+            int wallMarks = m_Pending.Count - garbageGroundMarks;
+            long groundStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            m_WallPlanTicks = groundStarted - wallsStarted;
+            if (automatic)
+            {
+                PlanGround(building, profile, ref rng, 0, false, MaxPerBuilding);
+            }
+
+            m_GroundPlanTicks = System.Diagnostics.Stopwatch.GetTimestamp() - groundStarted;
+
+            LastGroundMarks = garbageGroundMarks + m_Pending.Count - garbageGroundMarks - wallMarks;
+            LastWallMarks = wallMarks;
+
+            if (m_Pending.Count == 0)
+            {
+                failureReason = !wallsPossible && automatic
+                    ? "no approved active decal fits any facade, and none fits the lot"
+                    : m_SurfaceMisses > 0
+                        ? "no sampled position hit the building mesh (" + m_SurfaceMisses + " raycast miss(es)) | "
+                          + BuildingSurfaceProbe.DescribeMeshResidency(m_EntityManager, building)
+                        : profile.MaxIntensity <= 0.01f
+                            ? "profile asked for nothing: every family is at zero intensity"
+                            : "no automatic mark fit a sampled facade";
+                return false;
+            }
+
+            return SpawnPlan(building, profile, garbageTier, out placed, out failureReason);
+        }
+
+        /// <summary>The wall half of the plan: everything Apply did before the lot had a share.</summary>
+        private void PlanWalls(Entity building, in BuildingVisualProfile profile, ref Unity.Mathematics.Random rng)
+        {
             PlanRequiredFrontAgedCrack(building, profile, ref rng);
 
             // From Worn on (small tags only until Neglected, see DecalPrefabInfo.MinState), a player
@@ -302,23 +404,22 @@ namespace SeenBetterDays.Rendering
             PlanAllFamilies(building, profile, ref rng);
             PlanMinimumMark(building, profile, ref rng);
             PlanMinimumMarkPerFacade(building, profile, ref rng);
+            PlanStateMinimum(building, profile, ref rng);
+        }
 
-            if (m_Pending.Count == 0)
-            {
-                failureReason = m_SurfaceMisses > 0
-                    ? "no sampled position hit the building mesh (" + m_SurfaceMisses + " raycast miss(es)) | "
-                      + BuildingSurfaceProbe.DescribeMeshResidency(m_EntityManager, building)
-                    : profile.MaxIntensity <= 0.01f
-                        ? "profile asked for nothing: every family is at zero intensity"
-                        : "no automatic mark fit a sampled facade";
-                return false;
-            }
+        /// <summary>Replaces whatever the building had with the planned marks.</summary>
+        private bool SpawnPlan(Entity building, in BuildingVisualProfile profile, byte garbageTier, out int placed, out string failureReason)
+        {
+            placed = 0;
+            failureReason = null;
 
             // Only now that we know the plan is non-empty: Apply is the whole statement of how
             // this building should look, so whatever is on it is stale by definition.
+            long removeStarted = System.Diagnostics.Stopwatch.GetTimestamp();
             Remove(building);
+            m_RemoveTicks = System.Diagnostics.Stopwatch.GetTimestamp() - removeStarted;
 
-            OverlayRecord record = new OverlayRecord { Profile = profile };
+            OverlayRecord record = new OverlayRecord { Profile = profile, GarbageTier = garbageTier };
             SpawnPending(building, record);
             m_Pending.Clear();
 
@@ -344,6 +445,17 @@ namespace SeenBetterDays.Rendering
             out int placed,
             out string failureReason)
         {
+            return ApplyDesign(building, profile, design, 0, out placed, out failureReason);
+        }
+
+        public bool ApplyDesign(
+            Entity building,
+            in BuildingVisualProfile profile,
+            SeenBetterDays.Designs.DesignLibrary.Resolved design,
+            byte garbageTier,
+            out int placed,
+            out string failureReason)
+        {
             placed = 0;
             failureReason = null;
             m_SpawnTicks = 0;
@@ -351,6 +463,10 @@ namespace SeenBetterDays.Rendering
             m_SurfaceHits = 0;
             m_Raycasts = 0;
             m_RaycastTicks = 0;
+            m_GroundSetupTicks = 0;
+            m_PickTicks = 0;
+            m_WallPlanTicks = 0;
+            m_GroundPlanTicks = 0;
             m_TriangleSearches = 0;
             m_TriangleTicks = 0;
             m_SurfaceMisses = 0;
@@ -373,12 +489,32 @@ namespace SeenBetterDays.Rendering
                     Rotation = math.mul(transform.m_Rotation, design.Rotations[i]),
                     Family = design.Families[i],
                     FacadeIndex = 0,
+                    DesignSeedPlusOne = design.Seeds[i] + 1,
                 });
             }
 
+            if (garbageTier > 0 && TryResolveAllFacades(building, out failureReason))
+            {
+                PrepareSurfaceTemplate(building);
+                m_PlanState = profile.State;
+                m_LastFamilies.Clear();
+                m_SurfaceHits = 0;
+                m_SurfaceMisses = 0;
+                m_NextFacade = FindFacade(FacadeSide.Front);
+                int garbageBudget = design.Prefabs.Length + 6;
+                Unity.Mathematics.Random litterRng = new Unity.Mathematics.Random(
+                    (profile.Seed == 0u ? 1u : profile.Seed) ^ (uint)(garbageTier * 0x9E3779B9));
+                PlanGround(building, profile, ref litterRng, garbageTier, true, garbageBudget);
+                PlanGarbageWalls(building, garbageTier, garbageBudget, ref litterRng);
+            }
+
+            // Litter is supplemental: an unavailable facade survey should not make a valid
+            // authored design look like a failed placement.
+            failureReason = null;
+
             Remove(building);
 
-            OverlayRecord record = new OverlayRecord { Profile = profile, Design = design };
+            OverlayRecord record = new OverlayRecord { Profile = profile, Design = design, GarbageTier = garbageTier };
             SpawnPending(building, record);
             m_Pending.Clear();
 
@@ -428,8 +564,9 @@ namespace SeenBetterDays.Rendering
 
                     if ((initialization & RuntimeInitialization.SetPseudoRandomSeed) != 0)
                     {
-                        uint mixed = (uint)building.Index * 0x9E3779B9u ^ (uint)prefab.Index * 0x85EBCA6Bu ^ (uint)(i + 1);
-                        commandBuffer.SetComponent(element, new PseudoRandomSeed((ushort)(mixed ^ (mixed >> 16))));
+                        // The design's own seed, so the decals look as they did when it was made
+                        // and keep that look if it is exported again.
+                        commandBuffer.SetComponent(element, new PseudoRandomSeed(design.Seeds[i]));
                     }
                 }
 
@@ -441,6 +578,33 @@ namespace SeenBetterDays.Rendering
             }
 
             return design.Prefabs.Length;
+        }
+
+        /// <summary>The state the decals on this building were planned for.</summary>
+        public bool TryGetPlacedState(Entity building, out VisualState state)
+        {
+            OverlayRecord record;
+            if (!m_Records.TryGetValue(building, out record))
+            {
+                state = VisualState.Maintained;
+                return false;
+            }
+
+            state = record.Profile.State;
+            return true;
+        }
+
+        public bool TryGetGarbageTier(Entity building, out byte tier)
+        {
+            OverlayRecord record;
+            if (!m_Records.TryGetValue(building, out record))
+            {
+                tier = 0;
+                return false;
+            }
+
+            tier = record.GarbageTier;
+            return true;
         }
 
         /// <summary>Whether the decals on this building are a hand-made design, and whose.</summary>
@@ -473,7 +637,7 @@ namespace SeenBetterDays.Rendering
                 for (int facadeIndex = 0; facadeIndex < m_Facades.Count; facadeIndex++)
                 {
                     BuildingFacade facade = m_Facades[facadeIndex];
-                    if (m_Catalog.HasAutomaticFamilyThatFits(family, facade.Width, facade.Height))
+                    if (m_Catalog.HasAutomaticFamilyThatFits(family, facade.Width * MaxOverhang, facade.Height * MaxOverhang))
                     {
                         return true;
                     }
@@ -1117,6 +1281,15 @@ namespace SeenBetterDays.Rendering
 
         private int m_Raycasts;
         private long m_RaycastTicks;
+        private long m_GroundSetupTicks;
+
+        /// <summary>Where the rest of a placement went: finding the facades and removing the
+        /// building's previous marks (a structural change, which waits for running jobs).</summary>
+        private long m_PrepareTicks;
+        private long m_RemoveTicks;
+        private long m_WallPlanTicks;
+        private long m_GroundPlanTicks;
+        private long m_PickTicks;
 
         /// <summary>Time spent creating the decal entities, as against finding where they go.
         /// Measured for both random and designed placement, so the two can be compared.</summary>
@@ -1160,11 +1333,15 @@ namespace SeenBetterDays.Rendering
             return string.Format(
                 "{0} mark(s) from the surveyed wall, {1} ray fallback(s) taking {2:0.0} ms, "
               + "{3} triangle search(es) taking {4:0.0} ms, {5} miss(es), wall survey {6}, "
-              + "creating the decals {7:0.0} ms",
+              + "creating the decals {7:0.0} ms, terrain and lot surfaces {8:0.0} ms, "
+              + "facades and wall survey {9:0.0} ms, removing the old marks {10:0.0} ms, "
+              + "planning the walls {11:0.0} ms (picking surveyed points {13:0.0} ms), planning the lot {12:0.0} ms",
                 m_SurfaceHits, m_Raycasts, m_RaycastTicks / ticksPerMs,
                 m_TriangleSearches, m_TriangleTicks / ticksPerMs, m_SurfaceMisses,
                 m_SurfaceTemplateCacheHit ? "cached" : "done during this placement",
-                m_SpawnTicks / ticksPerMs);
+                m_SpawnTicks / ticksPerMs, m_GroundSetupTicks / ticksPerMs,
+                m_PrepareTicks / ticksPerMs, m_RemoveTicks / ticksPerMs,
+                m_WallPlanTicks / ticksPerMs, m_GroundPlanTicks / ticksPerMs, m_PickTicks / ticksPerMs);
         }
 
         private bool TryResolvePlacement(
@@ -1207,11 +1384,24 @@ namespace SeenBetterDays.Rendering
 
             // Pick from the wall we already measured, rather than casting a fresh ray for every
             // mark. Same question, asked once per building instead of once per mark.
-            if (TryPickCollectedSurface(facade, planePoint, maxVerticalError, ref rng, out position, out rotation))
+            long pickStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            bool picked = TryPickCollectedSurface(facade, planePoint, maxVerticalError, ref rng, out position, out rotation);
+            m_PickTicks += System.Diagnostics.Stopwatch.GetTimestamp() - pickStarted;
+            if (picked)
             {
                 m_SurfaceHits++;
                 m_SurfaceSides |= 1 << (int)facade.Side;
                 return true;
+            }
+
+            // The fallbacks below search the building's mesh: a single ray took 7-9 ms on a large
+            // building, so even one per placement made a visible stutter. Automatic marks use
+            // the surveyed wall only - a mark fewer is invisible, a stutter is not. The test
+            // harness's forced placements keep them.
+            if (m_SurveyOnly || (ForcedDecal == null && !AllowNonBuildingDecals))
+            {
+                m_SurfaceMisses++;
+                return false;
             }
 
             // Start well outside the outermost extent and travel inward, so the first thing hit is
@@ -1372,6 +1562,71 @@ namespace SeenBetterDays.Rendering
             return facade.PointAt(u, v) + facade.Normal * offsetMetres;
         }
 
+        /// <summary>Places an increasing amount of the approved trash decal pack at street level.
+        /// The small dedicated budget remains separate from designs and ordinary grime.</summary>
+        private void PlanGarbageWalls(
+            Entity building,
+            int garbageTier,
+            int budget,
+            ref Unity.Mathematics.Random rng)
+        {
+            if (garbageTier <= 0 || ForcedDecal != null || AllowNonBuildingDecals || m_Facades.Count == 0)
+            {
+                return;
+            }
+
+            int requested = s_LitterWallsByTier[math.clamp(garbageTier, 0, s_LitterWallsByTier.Length - 1)];
+            int front = FindFacade(FacadeSide.Front);
+
+            // Surveyed wall points only. Litter sits at the foot of the wall, where the survey
+            // often has no point, and the ray fallback then cost 9 ms a mark on a large tower -
+            // frames of 10 and 22 ms were logged. A missing piece is made up for on the ground.
+            m_SurveyOnly = true;
+            try
+            {
+                PlanGarbageWallMarks(building, requested, budget, front, ref rng);
+            }
+            finally
+            {
+                m_SurveyOnly = false;
+            }
+        }
+
+        /// <summary>Litter per tier (30%, 50%, 75% of the most a building can hold): on the
+        /// lot's ground, and at the foot of its walls - three, six and ten pieces in all.</summary>
+        private static readonly int[] s_LitterGroundByTier = { 0, 2, 4, 7 };
+        private static readonly int[] s_LitterWallsByTier = { 0, 1, 2, 3 };
+
+        /// <summary>Set while litter is planned: placement then takes surveyed wall points only.</summary>
+        private bool m_SurveyOnly;
+
+        private void PlanGarbageWallMarks(
+            Entity building,
+            int requested,
+            int budget,
+            int front,
+            ref Unity.Mathematics.Random rng)
+        {
+            for (int i = 0; i < requested && m_Pending.Count < budget; i++)
+            {
+                bool placed = false;
+                for (int sideOffset = 0; sideOffset < m_Facades.Count && !placed; sideOffset++)
+                {
+                    int facadeIndex = sideOffset == 0
+                        ? front
+                        : (front + sideOffset) % m_Facades.Count;
+                    BuildingFacade facade = m_Facades[facadeIndex];
+                    DecalPrefabInfo decal = m_Catalog.PickTrashWall(
+                        facade.Width * MaxOverhang, facade.Height * MaxOverhang, ref rng);
+                    if (decal != null)
+                    {
+                        placed = TryPlanMarkOnFacade(
+                            building, OverlayFamily.Dirt, decal, facadeIndex, false, true, ref rng);
+                    }
+                }
+            }
+        }
+
         /// <summary>
         /// Reserves one crack on the road-facing wall for Aged buildings. This state has no other
         /// active family to recover the front when a first crack choice misses its usable masonry.
@@ -1394,8 +1649,8 @@ namespace SeenBetterDays.Rendering
             BuildingFacade front = m_Facades[frontIndex];
             if (!m_Catalog.HasAutomaticFamilyThatFits(
                 OverlayFamily.Crack,
-                front.Width,
-                front.Height))
+                front.Width * MaxOverhang,
+                front.Height * MaxOverhang))
             {
                 return;
             }
@@ -1409,8 +1664,8 @@ namespace SeenBetterDays.Rendering
                 DecalPrefabInfo decal = m_Catalog.Pick(
                     OverlayFamily.Crack,
                     false,
-                    front.Width,
-                    front.Height,
+                    front.Width * MaxOverhang,
+                    front.Height * MaxOverhang,
                     ref rng,
                     out familyMatched,
                     profile.State);
@@ -1460,8 +1715,8 @@ namespace SeenBetterDays.Rendering
             BuildingFacade front = m_Facades[frontIndex];
             if (!m_Catalog.HasAutomaticFamilyThatFits(
                 OverlayFamily.Graffiti,
-                front.Width,
-                front.Height))
+                front.Width * MaxOverhang,
+                front.Height * MaxOverhang))
             {
                 return;
             }
@@ -1475,8 +1730,8 @@ namespace SeenBetterDays.Rendering
                 DecalPrefabInfo decal = m_Catalog.Pick(
                     OverlayFamily.Graffiti,
                     false,
-                    front.Width,
-                    front.Height,
+                    front.Width * MaxOverhang,
+                    front.Height * MaxOverhang,
                     ref rng,
                     out familyMatched,
                     profile.State);
@@ -1692,6 +1947,483 @@ namespace SeenBetterDays.Rendering
             PlanMarks(building, strongest, 1, ref rng);
         }
 
+        /// <summary>
+        /// Fewest marks a building gets in each state - Maintained, Aged, Worn, Neglected,
+        /// Decayed - whatever its size. Counts scale with wall area, so a small house was worth
+        /// half a reference building and an Aged one carried a single crack: nothing anyone would
+        /// notice. Large buildings already earn more than this and are unaffected.
+        /// </summary>
+        private static readonly int[] s_MinimumByState = { 0, 4, 6, 8, 10 };
+
+        /// <summary>
+        /// Tops the plan up to the state's minimum, from the families the state has, strongest
+        /// first and in turn. Stops early when nothing more fits: the minimum never forces a mark
+        /// onto a wall that has no room for one. Scaled down with the intensity option below 100%,
+        /// so a player who asked for fewer marks still gets fewer.
+        /// </summary>
+        private void PlanStateMinimum(Entity building, in BuildingVisualProfile profile, ref Unity.Mathematics.Random rng)
+        {
+            int target = s_MinimumByState[math.clamp((int)profile.State, 0, s_MinimumByState.Length - 1)];
+            float scale = Mod.Settings != null ? Mod.Settings.IntensityScale : 1f;
+            if (scale < 1f && target > 0)
+            {
+                target = math.max(1, (int)math.round(target * scale));
+            }
+
+            target = math.min(target, MaxPerBuilding);
+            if (m_Pending.Count >= target)
+            {
+                return;
+            }
+
+            var families = new List<OverlayFamily>(s_Families.Length);
+            var intensities = new List<float>(s_Families.Length);
+            foreach (OverlayFamily family in s_Families)
+            {
+                if (ForcedDecal == null && !AllowNonBuildingDecals && !m_Catalog.HasAutomaticFamily(family))
+                {
+                    continue;
+                }
+
+                float intensity = math.saturate(profile.GetIntensity(family));
+                if (intensity <= 0.01f)
+                {
+                    continue;
+                }
+
+                int at = 0;
+                while (at < intensities.Count && intensities[at] >= intensity)
+                {
+                    at++;
+                }
+
+                families.Insert(at, family);
+                intensities.Insert(at, intensity);
+            }
+
+            if (families.Count == 0)
+            {
+                return;
+            }
+
+            int stalls = 0;
+            for (int turn = 0; m_Pending.Count < target && stalls < families.Count; turn++)
+            {
+                int before = m_Pending.Count;
+                PlanMarks(building, families[turn % families.Count], 1, ref rng);
+                stalls = m_Pending.Count > before ? 0 : stalls + 1;
+            }
+        }
+
+        // ---- Ground of the lot -----------------------------------------------------------------
+
+        /// <summary>Ground marks a lot gets in each state - Maintained, Aged, Worn, Neglected,
+        /// Decayed - for each GroundAreaUnit of free ground, scaled with how much the lot has.
+        /// Small cracks are easy to miss, so a lot carries several.</summary>
+        private static readonly int[] s_GroundByState = { 0, 3, 4, 5, 6 };
+        private const float GroundAreaUnit = 100f;
+        private const int MaxGroundMarks = 12;
+
+        /// <summary>Largest ground decal, in metres, whatever the lot: a bigger one reaches the
+        /// street or the neighbours.</summary>
+        private const float MaxGroundEdge = 8f;
+
+        private Game.Simulation.TerrainSystem m_TerrainSystem;
+
+        /// <summary>Random points tried for each ground mark.</summary>
+        private const int GroundAttempts = 16;
+
+        /// <summary>Chance of accepting the less suitable kind of ground for a decal that only
+        /// prefers one - so cracks still appear on a lot with little paving, just less often.</summary>
+        private const float OtherGroundChance = 0.25f;
+
+        private struct GroundTriangle
+        {
+            public float2 A;
+            public float2 B;
+            public float2 C;
+        }
+
+        /// <summary>The paved surfaces of the lot being planned, as world-space triangles.</summary>
+        private readonly List<GroundTriangle> m_PavedTriangles = new List<GroundTriangle>();
+
+        /// <summary>Whether each surface prefab is paving, by its name, worked out once.</summary>
+        private readonly Dictionary<Entity, bool> m_PavedByPrefab = new Dictionary<Entity, bool>();
+        private Game.Prefabs.PrefabSystem m_PrefabSystemForSurfaces;
+
+        private static readonly string[] s_PavedWords =
+        {
+            "concrete", "asphalt", "pavement", "paving", "paved", "tile", "brick", "stone", "cobble",
+            "parking", "plaza", "sidewalk", "walkway", "driveway", "patio", "gravel",
+        };
+
+        /// <summary>
+        /// Collects the building's paved lot surfaces - drives, patios, paths - as triangles.
+        /// A lot's surfaces are areas owned by the building, each with a surface prefab whose name
+        /// says what it is; ground covered by none is the terrain itself, grass or soil.
+        /// </summary>
+        private void CollectPavedTriangles(Entity building)
+        {
+            m_PavedTriangles.Clear();
+            if (!m_EntityManager.HasBuffer<Game.Areas.SubArea>(building))
+            {
+                return;
+            }
+
+            if (m_PrefabSystemForSurfaces == null)
+            {
+                m_PrefabSystemForSurfaces = World.DefaultGameObjectInjectionWorld?.GetExistingSystemManaged<Game.Prefabs.PrefabSystem>();
+            }
+
+            DynamicBuffer<Game.Areas.SubArea> subAreas = m_EntityManager.GetBuffer<Game.Areas.SubArea>(building, true);
+            for (int i = 0; i < subAreas.Length; i++)
+            {
+                Entity area = subAreas[i].m_Area;
+                if (!m_EntityManager.Exists(area)
+                    || !m_EntityManager.HasComponent<Game.Areas.Surface>(area)
+                    || !m_EntityManager.HasComponent<PrefabRef>(area)
+                    || !m_EntityManager.HasBuffer<Game.Areas.Node>(area)
+                    || !m_EntityManager.HasBuffer<Game.Areas.Triangle>(area)
+                    || !IsPavedSurface(m_EntityManager.GetComponentData<PrefabRef>(area).m_Prefab))
+                {
+                    continue;
+                }
+
+                DynamicBuffer<Game.Areas.Node> nodes = m_EntityManager.GetBuffer<Game.Areas.Node>(area, true);
+                DynamicBuffer<Game.Areas.Triangle> triangles = m_EntityManager.GetBuffer<Game.Areas.Triangle>(area, true);
+                for (int t = 0; t < triangles.Length; t++)
+                {
+                    int3 index = triangles[t].m_Indices;
+                    if (math.any(index < 0) || math.any(index >= nodes.Length))
+                    {
+                        continue;
+                    }
+
+                    m_PavedTriangles.Add(new GroundTriangle
+                    {
+                        A = nodes[index.x].m_Position.xz,
+                        B = nodes[index.y].m_Position.xz,
+                        C = nodes[index.z].m_Position.xz,
+                    });
+                }
+            }
+        }
+
+        private bool IsPaved(float2 point)
+        {
+            for (int i = 0; i < m_PavedTriangles.Count; i++)
+            {
+                GroundTriangle t = m_PavedTriangles[i];
+                float d1 = Cross(point, t.A, t.B);
+                float d2 = Cross(point, t.B, t.C);
+                float d3 = Cross(point, t.C, t.A);
+                bool hasNegative = d1 < 0f || d2 < 0f || d3 < 0f;
+                bool hasPositive = d1 > 0f || d2 > 0f || d3 > 0f;
+                if (!(hasNegative && hasPositive))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static float Cross(float2 p, float2 a, float2 b)
+        {
+            return (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y);
+        }
+
+        /// <summary>Whether a surface prefab is paving, by its name. Each new name is written to
+        /// the log once with the verdict, so the word list can be checked against the game's.</summary>
+        private bool IsPavedSurface(Entity surfacePrefab)
+        {
+            bool paved;
+            if (m_PavedByPrefab.TryGetValue(surfacePrefab, out paved))
+            {
+                return paved;
+            }
+
+            string name = null;
+            try
+            {
+                name = m_PrefabSystemForSurfaces != null ? m_PrefabSystemForSurfaces.GetPrefabName(surfacePrefab) : null;
+            }
+            catch
+            {
+                // Unnamed: treated as unpaved.
+            }
+
+            string lower = name != null ? name.ToLowerInvariant() : string.Empty;
+            paved = false;
+            for (int i = 0; i < s_PavedWords.Length && !paved; i++)
+            {
+                paved = lower.Contains(s_PavedWords[i]);
+            }
+
+            m_PavedByPrefab[surfacePrefab] = paved;
+            return paved;
+        }
+
+        /// <summary>Wall points lower than this, in metres above the building's base, are left
+        /// out of the footprint: fences and hedges, not the house.</summary>
+        private const float GroundFootprintHeight = 2.2f;
+
+        /// <summary>The house's extent on its lot, in the prefab's own space, from the surveyed
+        /// wall points above fence height. False when the prefab has not been surveyed.</summary>
+        private bool TryWallFootprint(Entity prefab, out float2 min, out float2 max)
+        {
+            min = new float2(float.MaxValue);
+            max = new float2(float.MinValue);
+            List<BuildingSurfaceProbe.SurfacePoint>[] template;
+            if (!m_SurfaceTemplates.TryGetValue(prefab, out template) || template == null)
+            {
+                return false;
+            }
+
+            bool any = false;
+            for (int side = 0; side < template.Length; side++)
+            {
+                List<BuildingSurfaceProbe.SurfacePoint> points = template[side];
+                if (points == null)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < points.Count; i++)
+                {
+                    float3 p = points[i].m_Position;
+                    if (p.y < GroundFootprintHeight)
+                    {
+                        continue;
+                    }
+
+                    min = math.min(min, p.xz);
+                    max = math.max(max, p.xz);
+                    any = true;
+                }
+            }
+
+            return any;
+        }
+
+        /// <summary>Marks the last Apply put on the walls and on the lot, for the log.</summary>
+        public int LastWallMarks { get; private set; }
+        public int LastGroundMarks { get; private set; }
+
+        /// <summary>Where the last ground mark went, against the terrain and the building, for
+        /// the log while the ground layer is new.</summary>
+        public string LastGroundExample { get; private set; }
+
+        /// <summary>
+        /// Lays decals flat on the building's lot, where the building does not stand: small
+        /// cracks from Aged, rubbish and leaves from Worn, large cracks, damage and repair patches
+        /// from Neglected, stains and puddles at Decayed (see DecalPrefabCatalog.ClassifyForGround).
+        /// Crack and repair decals that cannot paint walls belong here, and a small house whose
+        /// walls take no decal still shows its state on its drive and garden.
+        ///
+        /// Positions are random over the lot, outside the building's footprint plus half a metre,
+        /// at the terrain's height there; each decal turns at random about the vertical.
+        /// </summary>
+        private void PlanGround(
+            Entity building,
+            in BuildingVisualProfile profile,
+            ref Unity.Mathematics.Random rng,
+            int garbageTier,
+            bool garbageOnly,
+            int budget)
+        {
+            LastGroundExample = "skipped: nothing asked for at this state, or no ground decals";
+            int baseCount = garbageOnly ? 0 : s_GroundByState[math.clamp((int)profile.State, 0, s_GroundByState.Length - 1)];
+            int litterCount = garbageOnly && garbageTier > 0
+                ? s_LitterGroundByTier[math.clamp(garbageTier, 0, s_LitterGroundByTier.Length - 1)]
+                : 0;
+            if ((baseCount == 0 && litterCount == 0) || m_Catalog.GroundPoolCount == 0
+                || !m_EntityManager.HasComponent<Transform>(building)
+                || !m_EntityManager.HasComponent<PrefabRef>(building))
+            {
+                return;
+            }
+
+            Entity prefab = m_EntityManager.GetComponentData<PrefabRef>(building).m_Prefab;
+            if (!m_EntityManager.HasComponent<BuildingData>(prefab))
+            {
+                return;
+            }
+
+            int2 lot = m_EntityManager.GetComponentData<BuildingData>(prefab).m_LotSize;
+            float2 half = new float2(lot.x, lot.y) * 4f;
+
+            // The footprint comes from the surveyed walls, not from ObjectGeometryData: a
+            // growable's bounds can cover its whole lot, which left no free ground at all. Only
+            // points above GroundFootprintHeight count, so the fences and hedges a lot often has
+            // as part of the building's model do not stretch the house to the lot's edges.
+            float2 footMin;
+            float2 footMax;
+            if (!TryWallFootprint(prefab, out footMin, out footMax))
+            {
+                LastGroundExample = "skipped: no surveyed walls to tell the house from its lot";
+                return;
+            }
+
+            footMin -= 0.5f;
+            footMax += 0.5f;
+            float lotArea = 4f * half.x * half.y;
+            float footArea = math.max(0f, (math.min(footMax.x, half.x) - math.max(footMin.x, -half.x))
+                                         * (math.min(footMax.y, half.y) - math.max(footMin.y, -half.y)));
+            float free = lotArea - footArea;
+            if (free < 8f)
+            {
+                LastGroundExample = "skipped: " + free.ToString("0") + " m² of free ground on a "
+                                  + (half.x * 2f).ToString("0") + "x" + (half.y * 2f).ToString("0") + " m lot, footprint "
+                                  + footMin.x.ToString("0.0") + ".." + footMax.x.ToString("0.0") + " / "
+                                  + footMin.y.ToString("0.0") + ".." + footMax.y.ToString("0.0");
+                return;
+            }
+
+            float intensity = Mod.Settings != null ? Mod.Settings.IntensityScale : 1f;
+            float areaScale = math.clamp(free / GroundAreaUnit, 0.5f, 2.5f);
+            int requested = garbageOnly
+                ? (int)math.round(litterCount * areaScale * math.min(1f, intensity))
+                : (int)math.round(baseCount * areaScale * math.min(1f, intensity));
+            if (garbageOnly && requested == 0 && intensity > 0f) requested = 1;
+            int count = math.min(math.clamp(requested, 1, MaxGroundMarks), math.max(0, budget - m_Pending.Count));
+            if (count <= 0)
+            {
+                return;
+            }
+
+            var families = new List<OverlayFamily>(3);
+            if (!garbageOnly) families.Add(OverlayFamily.Crack);
+            if (profile.State >= VisualState.Worn) families.Add(OverlayFamily.Dirt);
+            if (!garbageOnly && profile.State >= VisualState.Decayed) families.Add(OverlayFamily.Stain);
+
+            if (m_TerrainSystem == null)
+            {
+                m_TerrainSystem = World.DefaultGameObjectInjectionWorld?.GetExistingSystemManaged<Game.Simulation.TerrainSystem>();
+            }
+
+            // Without waiting for pending terrain work: GetHeightData(true) completes the terrain
+            // jobs first, and a placement that asked for it took 27 ms with every other part
+            // accounted for. A height a frame old is just as good for a mark on the ground.
+            long groundStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            bool haveTerrain = m_TerrainSystem != null;
+            Game.Simulation.TerrainHeightData terrain = haveTerrain ? m_TerrainSystem.GetHeightData(false) : default;
+            haveTerrain = haveTerrain && terrain.isCreated;
+
+            Transform transform = m_EntityManager.GetComponentData<Transform>(building);
+            float maxEdge = math.min(MaxGroundEdge, math.cmin(half));
+            int firstFamily = garbageOnly ? 0 : rng.NextInt(families.Count);
+            CollectPavedTriangles(building);
+            m_GroundSetupTicks += System.Diagnostics.Stopwatch.GetTimestamp() - groundStarted;
+
+            for (int i = 0; i < count; i++)
+            {
+                DecalPrefabInfo decal = null;
+                OverlayFamily family = OverlayFamily.None;
+                if (garbageOnly)
+                {
+                    family = OverlayFamily.Dirt;
+                    decal = m_Catalog.PickTrashGround(maxEdge, ref rng);
+                }
+                else
+                {
+                    for (int f = 0; f < families.Count && decal == null; f++)
+                    {
+                        family = families[(firstFamily + i + f) % families.Count];
+                        decal = m_Catalog.PickGround(family, maxEdge, profile.State, ref rng);
+                    }
+                }
+
+                if (decal == null)
+                {
+                    LastGroundExample = garbageOnly
+                        ? "skipped: G87 Trash Decals ground assets are not installed or do not fit this lot"
+                        : "skipped: no ground decal of " + string.Join("/", families)
+                                      + " up to " + maxEdge.ToString("0.0") + " m allowed at " + profile.State;
+                    return;
+                }
+
+                bool placedOne = false;
+                for (int attempt = 0; attempt < GroundAttempts && !placedOne; attempt++)
+                {
+                    float2 local = new float2(rng.NextFloat(-half.x, half.x), rng.NextFloat(-half.y, half.y));
+                    if (math.all(local > footMin) && math.all(local < footMax))
+                    {
+                        continue;
+                    }
+
+                    float3 position = transform.m_Position + math.mul(transform.m_Rotation, new float3(local.x, 0f, local.y));
+                    float extent = math.max(decal.Size.x, decal.Size.z);
+                    if (TooCloseToPlanned(position, extent, -1))
+                    {
+                        continue;
+                    }
+
+                    // Paving or not: patches only on paving, cracks mostly there, leaves mostly on
+                    // grass. "Mostly" is a chance to accept the other kind of ground, so a lot
+                    // with little of the preferred one still gets its marks.
+                    bool paved = IsPaved(position.xz);
+                    bool accept;
+                    switch (decal.GroundSurface)
+                    {
+                        case GroundSurfacePreference.PavedOnly:
+                            accept = paved;
+                            break;
+                        case GroundSurfacePreference.PreferPaved:
+                            accept = paved || rng.NextFloat() < OtherGroundChance;
+                            break;
+                        case GroundSurfacePreference.PreferUnpaved:
+                            accept = !paved || rng.NextFloat() < OtherGroundChance;
+                            break;
+                        default:
+                            accept = true;
+                            break;
+                    }
+
+                    if (!accept)
+                    {
+                        continue;
+                    }
+
+                    if (haveTerrain)
+                    {
+                        position.y = Game.Simulation.TerrainUtils.SampleHeight(ref terrain, position);
+                    }
+
+                    LastGroundExample = decal.Name + " " + decal.Size.x.ToString("0.0") + "x" + decal.Size.z.ToString("0.0")
+                                      + " at lot (" + local.x.ToString("0.0") + ", " + local.y.ToString("0.0")
+                                      + ") of " + (half.x * 2f).ToString("0") + "x" + (half.y * 2f).ToString("0")
+                                      + " m, footprint " + footMin.x.ToString("0.0") + ".." + footMax.x.ToString("0.0")
+                                      + " / " + footMin.y.ToString("0.0") + ".." + footMax.y.ToString("0.0")
+                                      + ", terrain height " + position.y.ToString("0.00")
+                                      + " against building " + transform.m_Position.y.ToString("0.00")
+                                      + (haveTerrain ? string.Empty : " (no terrain system)")
+                                      + ", on " + (paved ? "paving" : "unpaved ground")
+                                      + " (" + m_PavedTriangles.Count + " paved triangle(s) on this lot)";
+
+                    m_Pending.Add(new PendingElement
+                    {
+                        Prefab = decal.PrefabEntity,
+                        Position = position,
+                        Rotation = quaternion.RotateY(rng.NextFloat(0f, 2f * math.PI)),
+                        Family = family,
+                        FacadeIndex = -1,
+                        Extent = extent,
+                    });
+                    placedOne = true;
+                }
+
+                if (!placedOne)
+                {
+                    LastGroundExample = "skipped: no suitable point among " + GroundAttempts + " for " + decal.Name
+                                      + " (" + decal.GroundSurface + ", " + m_PavedTriangles.Count + " paved triangle(s)); footprint "
+                                      + footMin.x.ToString("0.0") + ".." + footMax.x.ToString("0.0") + " / "
+                                      + footMin.y.ToString("0.0") + ".." + footMax.y.ToString("0.0")
+                                      + " of a " + (half.x * 2f).ToString("0") + "x" + (half.y * 2f).ToString("0") + " m lot";
+                }
+            }
+        }
+
         private static readonly OverlayFamily[] s_Families =
         {
             OverlayFamily.Dirt,
@@ -1773,8 +2505,8 @@ namespace SeenBetterDays.Rendering
                         decal = m_Catalog.Pick(
                             strongest,
                             AllowNonBuildingDecals,
-                            facade.Width,
-                            facade.Height,
+                            facade.Width * MaxOverhang,
+                            facade.Height * MaxOverhang,
                             ref rng,
                             out familyMatched,
                             profile.State);
@@ -1846,8 +2578,8 @@ namespace SeenBetterDays.Rendering
                         decal = m_Catalog.Pick(
                             family,
                             AllowNonBuildingDecals,
-                            facade.Width,
-                            facade.Height,
+                            facade.Width * MaxOverhang,
+                            facade.Height * MaxOverhang,
                             ref rng,
                             out familyMatched,
                             m_PlanState);
@@ -1899,6 +2631,7 @@ namespace SeenBetterDays.Rendering
                 decal,
                 facadeIndex,
                 false,
+                false,
                 ref rng);
         }
 
@@ -1910,43 +2643,69 @@ namespace SeenBetterDays.Rendering
             bool preferLowerGraffiti,
             ref Unity.Mathematics.Random rng)
         {
+            return TryPlanMarkOnFacade(building, family, decal, facadeIndex,
+                                       preferLowerGraffiti, false, ref rng);
+        }
+
+        private bool TryPlanMarkOnFacade(
+            Entity building,
+            OverlayFamily family,
+            DecalPrefabInfo decal,
+            int facadeIndex,
+            bool preferLowerGraffiti,
+            bool forceLow,
+            ref Unity.Mathematics.Random rng)
+        {
             BuildingFacade facade = m_Facades[facadeIndex];
 
-            // A projector cannot be clipped to its owning building. If it overhangs this
-            // rectangle it can paint an attached neighbour, which is how a Maintained
-            // row house appeared to retain two stains that actually belonged next door.
+            // A decal may be up to MaxOverhang times the facade: it is only drawn where it meets a
+            // surface, so the part past the wall's edge or over a ledge simply does not show, and
+            // a stain spilling onto the pavement at the foot of the wall reads as weathering too.
+            // Before 2026-10-02 it had to fit inside the facade, and on small houses no wall decal
+            // the installed packs offer fitted at all - most were left bare. The known cost: on
+            // attached row houses a wide decal can reach the house next door, which is why the
+            // limit existed (a Maintained row house once showed two stains from its neighbour).
             if (!AllowNonBuildingDecals
-                && (decal.Size.x > facade.Width || decal.Size.z > facade.Height))
+                && (decal.Size.x > facade.Width * MaxOverhang || decal.Size.z > facade.Height * MaxOverhang))
             {
                 return false;
             }
 
-            // Keep the decal inside the facade rectangle. A projector that overhangs the
-            // wall does not merely look wrong - it paints whatever else is behind it.
+            // Keep the decal's centre on the facade, so even an oversized decal always meets the
+            // wall: a small one can never end up entirely off it and invisible.
             float marginU = math.min(0.5f, decal.Size.x * 0.5f / math.max(facade.Width, 0.01f));
             float marginV = math.min(0.5f, decal.Size.z * 0.5f / math.max(facade.Height, 0.01f));
             float u = math.lerp(marginU, 1f - marginU, rng.NextFloat());
 
-            float v = family == OverlayFamily.Graffiti
-                ? GraffitiHeight(facade.Height, decal.Size.z, preferLowerGraffiti, marginV, ref rng)
+            float v = family == OverlayFamily.Graffiti || forceLow
+                ? GraffitiHeight(facade.Height, decal.Size.z, preferLowerGraffiti || forceLow, marginV, ref rng)
                 : math.lerp(marginV, 1f - marginV, SampleVerticalPosition(family, ref rng));
 
             float3 position;
             quaternion rotation;
             if (!TryResolvePlacement(building, facade, u, v, ref rng, out position, out rotation,
-                    family == OverlayFamily.Graffiti ? GraffitiVerticalTolerance : float.MaxValue))
+                    family == OverlayFamily.Graffiti || forceLow ? GraffitiVerticalTolerance : float.MaxValue))
             {
                 return false;
             }
 
-            // The real mesh sample can move away from the rectangle's proposed point. Recheck
-            // the final centre so the full decal still lies inside the facade.
+            // The real mesh sample can move away from the rectangle's proposed point. Recheck that
+            // the final centre is still on the facade. A decal that fits keeps the old, stricter
+            // rule - wholly inside - so only oversized decals are allowed past the edges.
             float3 fromCenter = position - facade.Center;
             float halfWidth = facade.Width * 0.5f;
             float halfHeight = facade.Height * 0.5f;
-            if (!AllowNonBuildingDecals
-                && (math.abs(math.dot(fromCenter, facade.Tangent)) + decal.Size.x * 0.5f > halfWidth
-                    || math.abs(math.dot(fromCenter, facade.Up)) + decal.Size.z * 0.5f > halfHeight))
+            float alongWidth = math.abs(math.dot(fromCenter, facade.Tangent));
+            float alongHeight = math.abs(math.dot(fromCenter, facade.Up));
+            float allowedU = decal.Size.x <= facade.Width ? halfWidth - decal.Size.x * 0.5f : halfWidth;
+            float allowedV = decal.Size.z <= facade.Height ? halfHeight - decal.Size.z * 0.5f : halfHeight;
+            if (!AllowNonBuildingDecals && (alongWidth > allowedU || alongHeight > allowedV))
+            {
+                return false;
+            }
+
+            float extent = math.max(decal.Size.x, decal.Size.z);
+            if (!AllowNonBuildingDecals && TooCloseToPlanned(position, extent, facadeIndex))
             {
                 return false;
             }
@@ -1958,6 +2717,7 @@ namespace SeenBetterDays.Rendering
                 Rotation = rotation,
                 Family = family,
                 FacadeIndex = facadeIndex,
+                Extent = extent,
             });
 
             int already;
@@ -2146,10 +2906,20 @@ namespace SeenBetterDays.Rendering
 
                     if ((initialization & RuntimeInitialization.SetPseudoRandomSeed) != 0)
                     {
-                        uint mixed = (uint)building.Index * 0x9E3779B9u
-                                   ^ (uint)pending.Prefab.Index * 0x85EBCA6Bu
-                                   ^ (uint)(i + 1);
-                        commandBuffer.SetComponent(element, new PseudoRandomSeed((ushort)(mixed ^ (mixed >> 16))));
+                        ushort seed;
+                        if (pending.DesignSeedPlusOne > 0)
+                        {
+                            seed = (ushort)(pending.DesignSeedPlusOne - 1);
+                        }
+                        else
+                        {
+                            uint mixed = (uint)building.Index * 0x9E3779B9u
+                                       ^ (uint)pending.Prefab.Index * 0x85EBCA6Bu
+                                       ^ (uint)(i + 1);
+                            seed = (ushort)(mixed ^ (mixed >> 16));
+                        }
+
+                        commandBuffer.SetComponent(element, new PseudoRandomSeed(seed));
                     }
 
                     commandBuffer.AddComponent(element, new WeatheringOverlay(building, pending.Family));
@@ -2213,8 +2983,10 @@ namespace SeenBetterDays.Rendering
             {
                 for (int i = 0; i < live.Length; i++)
                 {
+                    // The building's previous marks are queued for deletion but still alive
+                    // until the next frame; they are not part of the new record.
                     WeatheringOverlay overlay = m_EntityManager.GetComponentData<WeatheringOverlay>(live[i]);
-                    if (overlay.m_Building == building)
+                    if (overlay.m_Building == building && !DeferredDeletion.IsPending(live[i]))
                     {
                         record.Elements.Add(live[i]);
                     }
@@ -2295,6 +3067,56 @@ namespace SeenBetterDays.Rendering
               .Append(", facade=").Append(Side)
               .Append(", invertProjection=").Append(InvertProjection)
               .Append(", normalOffsetMetres=").Append(NormalOffsetMetres.ToString("0.00"));
+
+            // The building itself: the game picks a mesh variant per building from its seed, and
+            // a design made on one variant can miss a facade that sits elsewhere on another.
+            if (m_EntityManager.Exists(building))
+            {
+                sb.AppendLine();
+                sb.Append("  BUILDING ").Append(building.Index);
+                if (m_EntityManager.HasComponent<Transform>(building))
+                {
+                    Transform bt = m_EntityManager.GetComponentData<Transform>(building);
+                    sb.AppendFormat(" at ({0:0.0},{1:0.0},{2:0.0}) rotation=({3:0.000},{4:0.000},{5:0.000},{6:0.000})",
+                        bt.m_Position.x, bt.m_Position.y, bt.m_Position.z,
+                        bt.m_Rotation.value.x, bt.m_Rotation.value.y, bt.m_Rotation.value.z, bt.m_Rotation.value.w);
+                }
+
+                if (m_EntityManager.HasComponent<PseudoRandomSeed>(building))
+                {
+                    sb.Append(" seed=").Append(m_EntityManager.GetComponentData<PseudoRandomSeed>(building).m_Seed);
+                }
+
+                if (m_EntityManager.HasBuffer<Game.Rendering.MeshGroup>(building))
+                {
+                    DynamicBuffer<Game.Rendering.MeshGroup> groups = m_EntityManager.GetBuffer<Game.Rendering.MeshGroup>(building, true);
+                    sb.Append(" meshGroups=[");
+                    for (int g = 0; g < groups.Length; g++)
+                    {
+                        if (g > 0) sb.Append(", ");
+                        sb.Append(groups[g].m_SubMeshGroup).Append('/').Append(groups[g].m_MeshOffset);
+                    }
+
+                    sb.Append(']');
+                }
+                else
+                {
+                    sb.Append(" meshGroups=none");
+                }
+
+                if (m_EntityManager.HasBuffer<Game.Rendering.MeshBatch>(building))
+                {
+                    DynamicBuffer<Game.Rendering.MeshBatch> buildingBatches = m_EntityManager.GetBuffer<Game.Rendering.MeshBatch>(building, true);
+                    sb.Append(" meshes=[");
+                    for (int b = 0; b < buildingBatches.Length; b++)
+                    {
+                        if (b > 0) sb.Append(", ");
+                        sb.Append(buildingBatches[b].m_MeshIndex).Append('@').Append(buildingBatches[b].m_GroupIndex);
+                    }
+
+                    sb.Append(']');
+                }
+            }
 
             for (int i = 0; i < record.Elements.Count; i++)
             {
@@ -2446,7 +3268,7 @@ namespace SeenBetterDays.Rendering
                 for (int i = 0; i < live.Length; i++)
                 {
                     WeatheringOverlay overlay = m_EntityManager.GetComponentData<WeatheringOverlay>(live[i]);
-                    if (overlay.m_Building != building)
+                    if (overlay.m_Building != building || DeferredDeletion.IsPending(live[i]))
                     {
                         continue;
                     }
@@ -2490,16 +3312,13 @@ namespace SeenBetterDays.Rendering
         /// Tagging with <see cref="Deleted"/> rather than destroying outright. That is the
         /// game's own removal path: PrepareCleanUpSystem collects everything carrying Deleted,
         /// the culling system releases the render batch, and CleanUpSystem destroys the entity
-        /// at the end of the frame. Destroying it ourselves would leave the batch behind.
+        /// at the end of the frame. Destroying it ourselves would leave the batch behind. The tag
+        /// goes through the game's first modification barrier, not straight on: see
+        /// <see cref="DeferredDeletion"/> for the crash tagging it from here caused.
         /// </summary>
         private void DestroyElement(Entity element)
         {
-            if (!m_EntityManager.Exists(element) || m_EntityManager.HasComponent<Deleted>(element))
-            {
-                return;
-            }
-
-            m_EntityManager.AddComponent<Deleted>(element);
+            DeferredDeletion.Delete(m_EntityManager, element);
         }
 
         public int PruneOrphans()
@@ -2538,6 +3357,19 @@ namespace SeenBetterDays.Rendering
 
             for (int i = 0; i < dead.Count; i++)
             {
+                // Logged before removing: a native crash followed the demolition of a building
+                // carrying a design on 2026-10-03, and this is the last thing the mod does then.
+                OverlayRecord record;
+                if (m_Log != null && m_Records.TryGetValue(dead[i], out record))
+                {
+                    m_Log.Info("Seen Better Days: building " + dead[i].Index + " "
+                             + (!m_EntityManager.Exists(dead[i]) ? "no longer exists"
+                                : m_EntityManager.HasComponent<Deleted>(dead[i]) ? "is being demolished"
+                                : "is under construction")
+                             + "; removing its " + record.Elements.Count + " decal(s)"
+                             + (record.Design != null ? " (hand-made design)" : "") + ".");
+                }
+
                 Remove(dead[i]);
             }
 

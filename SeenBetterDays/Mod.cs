@@ -102,6 +102,7 @@ namespace SeenBetterDays
 
             Log.Info("Settings: weathering=" + Settings.EnableWeathering
                    + ", detail=" + Settings.EnableDecalDetail
+                   + ", litter=" + Settings.EnableGarbageLitter
                    + ", intensity=" + Settings.Intensity + "%"
                    + ", tooltip=" + Settings.ShowMaintenanceTooltip
                    + ", state keys=" + Settings.EnableStateKeys
@@ -130,6 +131,10 @@ namespace SeenBetterDays
             updateSystem.UpdateBefore<BuildingWeatheringSystem>(SystemUpdatePhase.ModificationEnd);
             updateSystem.UpdateBefore<DecalDetailSystem>(SystemUpdatePhase.ModificationEnd);
             updateSystem.UpdateBefore<FacadeSurveySystem>(SystemUpdatePhase.ModificationEnd);
+
+            // Deletions queued by the mod's systems, applied before the game's search tree and
+            // attachment systems run (see DeferredDeletion).
+            updateSystem.UpdateAt<SeenBetterDays.Rendering.DeferredDeletionSystem>(SystemUpdatePhase.Modification1);
 
             // Colour editing: the UI module reports the Customize tab from the UI phase; the colour
             // itself is written here with the rest of the weathering.

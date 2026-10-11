@@ -1,0 +1,409 @@
+{
+  "format": 1,
+  "building": "CN_BonusOfficeHigh01a_L2_2x4",
+  "state": "Aged",
+  "author": "Fabiozsche",
+  "created": "2026-10-03T21:08:07Z",
+  "decals": [
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 09 C L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        0.607,
+        60.04,
+        3.804
+      ],
+      "rotation": [
+        5.66787222E-08,
+        0.0187163949,
+        -6.585619E-08,
+        0.9998249
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 25 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        6.05,
+        0.713,
+        1.773
+      ],
+      "rotation": [
+        -0.51717484,
+        -0.5170083,
+        0.4822139,
+        -0.48239243
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 25 8x4 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        6.05,
+        0.733,
+        5.548
+      ],
+      "rotation": [
+        -0.501731932,
+        -0.5017321,
+        0.4982621,
+        -0.498262078
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 17 F L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        0.971,
+        60.04,
+        -8.278
+      ],
+      "rotation": [
+        5.66787222E-08,
+        0.0187163949,
+        -6.585619E-08,
+        0.9998249
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "Stains and Leakage Decal Pack Stains Leakage 1 - Large Decal",
+      "pack": "Stains and Leakage Decal Pack",
+      "position": [
+        6.404,
+        56.333,
+        -5.801
+      ],
+      "rotation": [
+        0.5022279,
+        0.5021624,
+        0.4974451,
+        -0.498145282
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "Stains and Leakage Decal Pack Stains Leakage 1 - Large Decal",
+      "pack": "Stains and Leakage Decal Pack",
+      "position": [
+        -6.407,
+        56.758,
+        -5.951
+      ],
+      "rotation": [
+        -0.495678157,
+        0.495959342,
+        0.5039409,
+        0.504352331
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 06 B L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        -0.338,
+        -0.001,
+        8.932
+      ],
+      "rotation": [
+        5.66787222E-08,
+        0.0187163949,
+        -6.585619E-08,
+        0.9998249
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "Stains and Leakage Decal Pack Stains Leakage 1 - Large Decal",
+      "pack": "Stains and Leakage Decal Pack",
+      "position": [
+        6.413,
+        56.375,
+        6.415
+      ],
+      "rotation": [
+        0.502167463,
+        0.502222836,
+        0.498052418,
+        -0.497537971
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Moss and Rust Stains G87 Moss 23 8x8 Decal",
+      "pack": "G87 Moss and Rust",
+      "position": [
+        2.359,
+        5.078,
+        8.85
+      ],
+      "rotation": [
+        -0.00283288956,
+        0.7071011,
+        0.7071012,
+        -0.00283288956
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 02 A M Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        6.05,
+        5.295,
+        -7.3
+      ],
+      "rotation": [
+        -0.485134453,
+        -0.485134423,
+        -0.5144363,
+        0.514436245
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 06 B L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        -2.467,
+        -0.001,
+        -9.185
+      ],
+      "rotation": [
+        5.66787222E-08,
+        0.0187163949,
+        -6.585619E-08,
+        0.9998249
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 02 A M Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        3.924,
+        3.477,
+        -8.85
+      ],
+      "rotation": [
+        0.212991253,
+        0.6743396,
+        -0.67426616,
+        -0.2127585
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "Stains and Leakage Decal Pack Stains Leakage 1 - Large Decal",
+      "pack": "Stains and Leakage Decal Pack",
+      "position": [
+        -6.409,
+        56.739,
+        7.617
+      ],
+      "rotation": [
+        -0.495678157,
+        0.495959342,
+        0.5039409,
+        0.504352331
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 06 B L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        -6.42,
+        17.097,
+        7.963
+      ],
+      "rotation": [
+        0.4878025,
+        -0.487802744,
+        -0.511907,
+        -0.5119069
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 03 A L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        -6.42,
+        33.498,
+        -9.119
+      ],
+      "rotation": [
+        0.7062051,
+        -0.7062174,
+        0.03569901,
+        0.0354552269
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "Stains and Leakage Decal Pack Stains Leakage 1 - Large Decal",
+      "pack": "Stains and Leakage Decal Pack",
+      "position": [
+        -0.245,
+        56.668,
+        -13.49
+      ],
+      "rotation": [
+        0.7029743,
+        0.0008917749,
+        -0.0133038759,
+        -0.711090446
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "Stains and Leakage Decal Pack Stains Leakage 1 - Large Decal",
+      "pack": "Stains and Leakage Decal Pack",
+      "position": [
+        -1.049,
+        56.44,
+        13.587
+      ],
+      "rotation": [
+        0.004668534,
+        0.707818031,
+        0.706315458,
+        0.00951311
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 06 B L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        6.3,
+        40.411,
+        -12.218
+      ],
+      "rotation": [
+        -0.57521385,
+        -0.57521373,
+        -0.411253244,
+        0.4112532
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 03 A L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        6.42,
+        23.725,
+        12.31
+      ],
+      "rotation": [
+        -0.114794821,
+        -0.114794761,
+        0.6977266,
+        -0.6977264
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "decal": "G87 Stains and Puddles Decals Wet Pack Stains G87 Stain 06 B L Decal",
+      "pack": "G87 Stains and Puddles Decals Wet Pack",
+      "position": [
+        3.787,
+        23.402,
+        13.5
+      ],
+      "rotation": [
+        -0.195017785,
+        -0.6796825,
+        -0.6796824,
+        -0.195017785
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ]
+}

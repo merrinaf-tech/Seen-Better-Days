@@ -54,5 +54,13 @@ namespace SeenBetterDays.Designs
         /// <summary>Extra Detailing Tools' per-object scale; 1, 1, 1 when the decal was not
         /// scaled.</summary>
         public float[] scale;
+
+        /// <summary>
+        /// The decal's PseudoRandomSeed when it was exported, 0-65535. The game picks a decal's
+        /// colour variation and mesh variant from it, and some variants are much fainter than
+        /// others: placed with another seed, a decal could all but vanish on one building of the
+        /// model while showing on the next. Absent in designs exported before 0.1.6.
+        /// </summary>
+        public int? seed;
     }
 }

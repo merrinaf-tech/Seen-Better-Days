@@ -64,20 +64,6 @@ namespace SeenBetterDays.Rendering
         private int m_VerifyCursor;
         private readonly List<Entity> m_Scratch = new List<Entity>();
 
-        private int m_HoverReports;
-        private const int MaxHoverReports = 60;
-        private int m_RewriteReports;
-        private const int MaxRewriteReports = 40;
-
-        /// <summary>The building under the cursor this frame, set by WeatheringColourSystem, for
-        /// the hover diagnosis.</summary>
-        public static Entity HoveredBuilding = Entity.Null;
-
-        private static string Rgb(Color c)
-        {
-            return c.r.ToString("0.000") + "/" + c.g.ToString("0.000") + "/" + c.b.ToString("0.000");
-        }
-
         /// <summary>Buildings darkened by the last pass, for the performance log.</summary>
         public int LastPassDarkened { get; private set; }
 
@@ -335,10 +321,27 @@ namespace SeenBetterDays.Rendering
         /// the one we wrote - the game rewrote it by some path no tag announced. Either way the
         /// colour read is the game's own, fresh, so the darkening is applied exactly once to it.
         /// </summary>
-        public void DarkenRecoloured(HashSet<Entity> rentersChanged, int verifyBudget)
+        public void DarkenRecoloured(HashSet<Entity> recoloured, int verifyBudget)
         {
             LastPassDarkened = 0;
             if (m_Records.Count == 0)
+            {
+                return;
+            }
+
+            // Only the buildings the game recomputed this frame, looked up in the records - not
+            // every record checked against them. Walking all records each frame cost about 0.6 ms
+            // a frame in a city of a few thousand weathered buildings, with nothing to do.
+            foreach (Entity building in recoloured)
+            {
+                Record record;
+                if (m_Records.TryGetValue(building, out record))
+                {
+                    DarkenOne(building, record);
+                }
+            }
+
+            if (verifyBudget <= 0)
             {
                 return;
             }
@@ -349,75 +352,76 @@ namespace SeenBetterDays.Rendering
                 m_Scratch.Add(pair.Key);
             }
 
-            int verifyFrom = m_Scratch.Count > 0 ? m_VerifyCursor % m_Scratch.Count : 0;
-            int verifyTo = verifyFrom + math.min(verifyBudget, m_Scratch.Count);
-            m_VerifyCursor = verifyTo;
-
-            for (int i = 0; i < m_Scratch.Count; i++)
+            int count = math.min(verifyBudget, m_Scratch.Count);
+            for (int n = 0; n < count; n++)
             {
-                Entity building = m_Scratch[i];
-                if (building == m_Editing || !m_EntityManager.Exists(building)
-                    || !m_EntityManager.HasBuffer<MeshColor>(building))
+                Entity building = m_Scratch[(m_VerifyCursor + n) % m_Scratch.Count];
+                if (recoloured.Contains(building) || building == m_Editing
+                    || !m_EntityManager.Exists(building) || !m_EntityManager.HasBuffer<MeshColor>(building))
                 {
                     continue;
                 }
 
                 Record record = m_Records[building];
-                bool recoloured = m_EntityManager.HasComponent<BatchesUpdated>(building)
-                               || m_EntityManager.HasComponent<Updated>(building)
-                               || (rentersChanged != null && rentersChanged.Contains(building));
-
-                if (building == HoveredBuilding && m_HoverReports < MaxHoverReports)
+                if (WasRewritten(building, record))
                 {
-                    m_HoverReports++;
-                    DynamicBuffer<MeshColor> seen = m_EntityManager.GetBuffer<MeshColor>(building, true);
-                    Color now = seen.Length > 0 ? seen[0].m_ColorSet.m_Channel0 : default;
-                    m_Log.Info("Seen Better Days: hovered building " + building.Index
-                             + " frame " + UnityEngine.Time.frameCount
-                             + " - BatchesUpdated " + m_EntityManager.HasComponent<BatchesUpdated>(building)
-                             + ", Updated " + m_EntityManager.HasComponent<Updated>(building)
-                             + ", Highlighted " + m_EntityManager.HasComponent<Game.Tools.Highlighted>(building)
-                             + ", colour now " + Rgb(now) + ", we last wrote " + (record.m_HasWritten ? Rgb(record.m_Written) : "nothing")
-                             + ", will darken " + recoloured + ".");
+                    DarkenOne(building, record);
                 }
+            }
 
-                bool inVerifyWindow = (i >= verifyFrom && i < verifyTo)
-                                   || (verifyTo > m_Scratch.Count && i < verifyTo - m_Scratch.Count);
-                if (!recoloured && !(inVerifyWindow && WasRewritten(building, record)))
-                {
-                    continue;
-                }
+            m_VerifyCursor = (m_VerifyCursor + count) % math.max(1, m_Scratch.Count);
+        }
 
-                if (!recoloured && m_RewriteReports < MaxRewriteReports)
-                {
-                    // Found by the slow check, not by a tag: something rewrote the colour without
-                    // announcing it. Record what the building carried, to find out what.
-                    m_RewriteReports++;
-                    DynamicBuffer<MeshColor> seen = m_EntityManager.GetBuffer<MeshColor>(building, true);
-                    m_Log.Info("Seen Better Days: colour rewritten without a tag on building " + building.Index
-                             + " frame " + UnityEngine.Time.frameCount
-                             + " - now " + (seen.Length > 0 ? Rgb(seen[0].m_ColorSet.m_Channel0) : "-")
-                             + ", we last wrote " + (record.m_HasWritten ? Rgb(record.m_Written) : "nothing")
-                             + ", hovered " + (building == HoveredBuilding)
-                             + ", Highlighted " + m_EntityManager.HasComponent<Game.Tools.Highlighted>(building)
-                             + ", Temp " + m_EntityManager.HasComponent<Game.Tools.Temp>(building) + ".");
-                }
+        private void DarkenOne(Entity building, Record record)
+        {
+            if (building == m_Editing || !m_EntityManager.Exists(building)
+                || !m_EntityManager.HasBuffer<MeshColor>(building))
+            {
+                return;
+            }
 
-                DynamicBuffer<MeshColor> colours = m_EntityManager.GetBuffer<MeshColor>(building);
-                if (colours.Length == 0)
-                {
-                    continue;
-                }
+            DynamicBuffer<MeshColor> colours = m_EntityManager.GetBuffer<MeshColor>(building);
+            if (colours.Length == 0)
+            {
+                return;
+            }
 
-                for (int c = 0; c < colours.Length; c++)
-                {
-                    colours[c] = new MeshColor { m_ColorSet = Weather(colours[c].m_ColorSet, record.m_Profile) };
-                }
+            for (int c = 0; c < colours.Length; c++)
+            {
+                colours[c] = new MeshColor { m_ColorSet = Weather(colours[c].m_ColorSet, record.m_Profile) };
+            }
 
-                record.m_Written = colours[0].m_ColorSet.m_Channel0;
-                record.m_HasWritten = true;
-                m_Records[building] = record;
-                LastPassDarkened++;
+            record.m_Written = colours[0].m_ColorSet.m_Channel0;
+            record.m_HasWritten = true;
+            m_Records[building] = record;
+            LastPassDarkened++;
+        }
+
+        /// <summary>
+        /// The weathering of a building this renderer darkens, for a temporary copy of it: the
+        /// game draws a Temp copy while a building is hovered or handled by a tool, and builds the
+        /// copy's colour from the building's own, so without this the copy showed the clean
+        /// colour. False for a building open in the colour panel, which shows its true colour.
+        /// </summary>
+        public bool TryGetProfile(Entity building, out BuildingVisualProfile profile)
+        {
+            Record record;
+            if (building != m_Editing && m_Records.TryGetValue(building, out record))
+            {
+                profile = record.m_Profile;
+                return true;
+            }
+
+            profile = default;
+            return false;
+        }
+
+        /// <summary>Darkens a rendered colour buffer in place with a building's weathering.</summary>
+        public static void Darken(DynamicBuffer<MeshColor> colours, in BuildingVisualProfile profile)
+        {
+            for (int c = 0; c < colours.Length; c++)
+            {
+                colours[c] = new MeshColor { m_ColorSet = Weather(colours[c].m_ColorSet, profile) };
             }
         }
 
@@ -487,15 +491,32 @@ namespace SeenBetterDays.Rendering
         /// building's colours: the light factor kept, and the share of saturation removed. Shared
         /// by the renderer and the tooltip, so the tooltip reports exactly what is drawn.
         /// </summary>
+        /// <summary>The weathering below which a building is Maintained (see
+        /// BuildingVisualProfile.StateFor), and the share of the full colour effect Aged begins at.</summary>
+        private const float MaintainedLimit = 0.12f;
+        private const float AgedStep = 0.2f;
+
         public static void ColourAmounts(float weathering, out float darkness, out float desaturation)
         {
-            // Exponent 1.5, not 2. Squared, a typical Aged building (22%) kept 98.8% of its light
-            // and read as Maintained; once a healthy city's weathered buildings became almost all
-            // Aged, the colour layer had all but vanished. 1.5 separates the first steps and
-            // leaves the worst states nearly where they were.
-            float colourWeathering = math.pow(math.saturate(weathering), 1.5f);
+            // Maintained is left untouched, and Aged starts with a step: on a smooth curve from
+            // zero (exponent 1.5 until 2026-10-04) a typical Aged building was only 2% darker than
+            // a Maintained one, and in a healthy city - mostly those two states - the colour
+            // layer could not be seen. From the Aged threshold the darkening rises from a fifth of
+            // the full effect to all of it: Aged 5-8.5% darker, Worn to 14%, Neglected to 21%,
+            // Decayed to 25%.
+            float w = math.saturate(weathering);
+            float colourWeathering = 0f;
+            if (w >= MaintainedLimit)
+            {
+                float t = (w - MaintainedLimit) / (1f - MaintainedLimit);
+                colourWeathering = AgedStep + (1f - AgedStep) * math.pow(t, 1.3f);
+            }
+
             darkness = 1f - colourWeathering * 0.25f;
-            desaturation = Response == WeatheringResponse.DarknessOnly ? 0f : colourWeathering * 0.35f;
+
+            // Greying keeps the smooth curve from zero it always had: with the step applied to it
+            // too, Aged read as washed out rather than older.
+            desaturation = Response == WeatheringResponse.DarknessOnly ? 0f : math.pow(w, 1.5f) * 0.35f;
         }
 
         /// <summary>
@@ -518,9 +539,8 @@ namespace SeenBetterDays.Rendering
 
             // One factor on all three channels: in HSV this lowers V and leaves H and S alone.
             // Colour follows the continuous weathering value rather than the active decal
-            // families, and the response accelerates: Aged is only a hint away from Maintained,
-            // the larger steps belong between the visibly worse states. At the five diagnostic
-            // values, F1/F2/F3/F4/F5 retain about 100/97.4/91.9/84.7/76.9 per cent of their light.
+            // families: Maintained untouched, a visible step at Aged, then steadily darker up to
+            // 25% at full weathering (see ColourAmounts).
             float darkness;
             float desaturation;
             ColourAmounts(weathering, out darkness, out desaturation);

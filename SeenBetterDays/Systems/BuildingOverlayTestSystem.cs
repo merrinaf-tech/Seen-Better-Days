@@ -291,6 +291,8 @@ namespace SeenBetterDays.Systems
             SeenBetterDays.Designs.DesignLibrary.Instance.Reload(m_Catalog, census, Mod.Log);
 
             Mod.Log.Info("Seen Better Days: " + m_Catalog.Describe(24));
+            Mod.Log.Info("Seen Better Days: " + m_Catalog.GroundPoolCount
+                       + " whitelisted decal(s) available for the ground of building lots.");
 
             if (!m_Renderer.IsAvailable)
             {
@@ -409,6 +411,14 @@ namespace SeenBetterDays.Systems
             else if (keyboard.sKey.wasPressedThisFrame)
             {
                 ApplyToTarget(VisualState.Decayed, useAlternateSeed: true);
+            }
+            else if (keyboard.lKey.wasPressedThisFrame)
+            {
+                // Logs every decal on the selected building as it stands: position, culling,
+                // batches and the tags that can hide it. For a mark that shows on one building
+                // of a model and not on the next.
+                Mod.Log.Info("Seen Better Days: decal diagnosis requested for the selected building.");
+                ScheduleDiagnosis(SelectedEntity);
             }
             else if (keyboard.dKey.wasPressedThisFrame)
             {

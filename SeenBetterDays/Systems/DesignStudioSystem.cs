@@ -52,6 +52,9 @@ namespace SeenBetterDays.Systems
             Load,
             NameChosen,
             Exit,
+            ExitRemove,
+            ExitKeep,
+            ExitCancel,
         }
 
         public Command PendingCommand { get; private set; }
@@ -86,6 +89,19 @@ namespace SeenBetterDays.Systems
             }));
             AddBinding(new TriggerBinding(Group, "designOpenFolder", () => PendingCommand = Command.OpenFolder));
             AddBinding(new TriggerBinding(Group, "designExit", () => PendingCommand = Command.Exit));
+            AddBinding(m_ExitQuestion = new ValueBinding<string>(Group, "designExitQuestion", string.Empty));
+            AddBinding(new TriggerBinding(Group, "designExitRemove", () => PendingCommand = Command.ExitRemove));
+            AddBinding(new TriggerBinding(Group, "designExitKeep", () => PendingCommand = Command.ExitKeep));
+            AddBinding(new TriggerBinding(Group, "designExitCancel", () => PendingCommand = Command.ExitCancel));
+        }
+
+        private ValueBinding<string> m_ExitQuestion;
+
+        /// <summary>Asks whether to remove the decals placed in design mode before leaving.
+        /// Empty closes the question.</summary>
+        public void AskExit(string question)
+        {
+            m_ExitQuestion.Update(question ?? string.Empty);
         }
 
         public void ClearCommand()
@@ -178,16 +194,13 @@ namespace SeenBetterDays.Systems
         private const int ConvertWaitFrames = 180;
         private int m_CaptureCountdown;
         private int m_ShowCountdown;
-        /// <summary>Decals already around the canvas when design mode began: the city's own
-        /// decoration. Neither exported nor removed on exit.</summary>
+        /// <summary>Decals already around the canvas when design mode began, placed by hand in
+        /// the city. Exported with the rest, never removed.</summary>
         private HashSet<Entity> m_PreExisting = new HashSet<Entity>();
 
         /// <summary>What the placed decals looked like at the last export, so leaving can tell
         /// whether there is unexported work.</summary>
         private string m_ExportedSignature = string.Empty;
-
-        /// <summary>Set by an exit refused for unexported work; the next exit goes ahead.</summary>
-        private bool m_ConfirmExit;
 
         /// <summary>The designs offered in the panel for the canvas's model, in panel order.</summary>
         private List<DesignLibrary.Resolved> m_Offered = new List<DesignLibrary.Resolved>();
@@ -240,16 +253,18 @@ namespace SeenBetterDays.Systems
             bool toolsOn = Mod.Settings != null && Mod.Settings.EnableDesignTools;
             Entity canvas = DesignCanvas.Building;
 
+            // Nobody to ask: the option was switched off or the building is gone. Nothing is
+            // removed - decals are only ever taken away when the player says so.
             if (canvas != Entity.Null && (!toolsOn || !EntityManager.Exists(canvas)
                                           || EntityManager.HasComponent<Deleted>(canvas)))
             {
-                Leave(true);
+                Leave(false);
                 return;
             }
 
             if (toolsOn && ToggleKeyPressed())
             {
-                if (canvas != Entity.Null) Leave(false); else Enter(m_SelectedInfo.selectedEntity);
+                if (canvas != Entity.Null) AskToLeave(); else Enter(m_SelectedInfo.selectedEntity);
             }
 
             DesignStudioUISystem.Command command = m_UI.PendingCommand;
@@ -265,11 +280,6 @@ namespace SeenBetterDays.Systems
             if (DesignCanvas.Building == Entity.Null)
             {
                 return;
-            }
-
-            if (command != DesignStudioUISystem.Command.Exit)
-            {
-                m_ConfirmExit = false;
             }
 
             switch (command)
@@ -306,7 +316,16 @@ namespace SeenBetterDays.Systems
                     OpenFolder();
                     break;
                 case DesignStudioUISystem.Command.Exit:
+                    AskToLeave();
+                    break;
+                case DesignStudioUISystem.Command.ExitRemove:
+                    Leave(true);
+                    break;
+                case DesignStudioUISystem.Command.ExitKeep:
                     Leave(false);
+                    break;
+                case DesignStudioUISystem.Command.ExitCancel:
+                    m_UI.AskExit(string.Empty);
                     break;
             }
         }
@@ -342,13 +361,13 @@ namespace SeenBetterDays.Systems
             }
 
             DesignCanvas.Building = building;
-            m_ConfirmExit = false;
             m_ExportedSignature = string.Empty;
             m_PreExisting = new HashSet<Entity>();
             List<Entity> already;
+            List<Entity> ignoredPlacedHere;
             int ignoredCount;
             string ignoredFailure;
-            CollectPlaced(out ignoredCount, out ignoredFailure, out already);
+            CollectPlaced(out ignoredCount, out ignoredFailure, out already, out ignoredPlacedHere);
             m_PreExisting = new HashSet<Entity>(already);
             m_Weathering.ClearForDesign(building);
             DecalObjectOverlayRenderer decals = m_Harness.DecalRenderer;
@@ -358,47 +377,75 @@ namespace SeenBetterDays.Systems
             }
 
             m_UI.Show(m_BuildingName, "Place decals with Anarchy and Extra Detailing Tools, frame the building and export. "
-                                    + "Leaving design mode removes the decals placed here.");
+                                    + "Decals already on the building are exported too. On leaving you choose whether "
+                                    + "to remove the ones placed here; the others are never touched.");
             OfferDesigns();
-            Mod.Log.Info("Seen Better Days: design mode on building " + building.Index + " (" + m_BuildingName + ").");
+            Mod.Log.Info("Seen Better Days: design mode on building " + building.Index + " (" + m_BuildingName + ")"
+                       + (already.Count > 0 ? ", " + already.Count + " decal(s) already on it" : "") + ".");
         }
 
         /// <summary>
-        /// Ends design mode and removes the decals placed during it - not those that were there
-        /// before. Refuses once when some of them were never exported, so work is not lost to a
-        /// stray click; the second exit goes ahead. <paramref name="force"/> skips the question,
-        /// for when the option is switched off or the building is gone.
+        /// Leaves straight away when nothing was placed in design mode; otherwise asks whether to
+        /// remove what was, saying whether it has been exported.
         /// </summary>
-        private void Leave(bool force)
+        private void AskToLeave()
         {
             Entity building = DesignCanvas.Building;
-            if (building != Entity.Null && EntityManager.Exists(building) && !EntityManager.HasComponent<Deleted>(building))
+            if (building == Entity.Null || !EntityManager.Exists(building) || EntityManager.HasComponent<Deleted>(building))
+            {
+                Leave(false);
+                return;
+            }
+
+            int ignoredCount;
+            string failure;
+            List<Entity> all;
+            List<Entity> placedHere;
+            CollectPlaced(out ignoredCount, out failure, out all, out placedHere);
+            if (failure != null || placedHere.Count == 0)
+            {
+                Leave(false);
+                return;
+            }
+
+            bool exported = all.Count > 0 && Signature(all) == m_ExportedSignature;
+            m_UI.AskExit(placedHere.Count + " decal(s) were placed in design mode"
+                       + (exported ? " and are in your last export." : ", and the design has changed since the last export.")
+                       + " Remove them before leaving? Decals that were on the building before design mode stay either way.");
+        }
+
+        /// <summary>
+        /// Ends design mode. With <paramref name="removePlaced"/>, removes the decals placed
+        /// during it, which the player has just agreed to; those that were there before design
+        /// mode began - placed by hand in the city - are never removed.
+        /// </summary>
+        private void Leave(bool removePlaced)
+        {
+            Entity building = DesignCanvas.Building;
+            int removed = 0;
+            if (removePlaced && building != Entity.Null && EntityManager.Exists(building)
+                && !EntityManager.HasComponent<Deleted>(building))
             {
                 int ignoredCount;
                 string failure;
-                List<Entity> placed;
-                CollectPlaced(out ignoredCount, out failure, out placed);
-                if (!force && failure == null && placed.Count > 0 && !m_ConfirmExit
-                    && Signature(placed) != m_ExportedSignature)
+                List<Entity> ignoredAll;
+                List<Entity> placedHere;
+                CollectPlaced(out ignoredCount, out failure, out ignoredAll, out placedHere);
+                // Through the game's modification barrier: these are the player's own objects,
+                // in the search tree and possibly attached to the building, and tagged from here
+                // they were destroyed before the game unregistered them (DeferredDeletion).
+                for (int i = 0; i < placedHere.Count; i++)
                 {
-                    m_ConfirmExit = true;
-                    m_UI.SetMessage(placed.Count + " decal(s) placed since the last export have not been exported. "
-                                  + "Exit again to discard them.");
-                    return;
-                }
-
-                for (int i = 0; i < placed.Count; i++)
-                {
-                    if (EntityManager.Exists(placed[i]) && !EntityManager.HasComponent<Deleted>(placed[i]))
+                    if (DeferredDeletion.Delete(EntityManager, placedHere[i]))
                     {
-                        EntityManager.AddComponent<Deleted>(placed[i]);
+                        removed++;
                     }
                 }
             }
 
-            m_ConfirmExit = false;
             m_PreExisting = new HashSet<Entity>();
             DesignCanvas.Building = Entity.Null;
+            m_UI.AskExit(string.Empty);
             m_UI.Show(string.Empty, string.Empty);
             m_UI.CloseNamePrompt();
             m_UI.SetDesigns("[]");
@@ -408,7 +455,8 @@ namespace SeenBetterDays.Systems
             {
                 // The decal layer picks it up again on its next pass; the colour is put back now.
                 m_Weathering.RefreshNow(building);
-                Mod.Log.Info("Seen Better Days: design mode ended on building " + building.Index + ".");
+                Mod.Log.Info("Seen Better Days: design mode ended on building " + building.Index
+                           + (removePlaced ? ", " + removed + " decal(s) placed in it removed" : ", decals kept") + ".");
             }
         }
 
@@ -426,16 +474,20 @@ namespace SeenBetterDays.Systems
 
         /// <summary>
         /// The decals the player placed on the canvas: every standalone decal object whose
-        /// position falls inside the building's bounds, plus a margin, that was not there when
-        /// design mode began. The whitelisted ones are returned for export; <paramref name="all"/>
-        /// holds every one, whitelisted or not, for removal on exit.
+        /// position falls inside the building's bounds, plus a margin - those placed by hand in
+        /// the city before design mode as well, so a building decorated earlier can be exported.
+        /// The whitelisted ones are returned for export; <paramref name="all"/> holds every one,
+        /// whitelisted or not, and <paramref name="placedHere"/> only those placed since design
+        /// mode began, the only ones that may be removed on exit.
         /// </summary>
-        private List<Found> CollectPlaced(out int notWhitelisted, out string failure, out List<Entity> all)
+        private List<Found> CollectPlaced(out int notWhitelisted, out string failure, out List<Entity> all,
+                                          out List<Entity> placedHere)
         {
             notWhitelisted = 0;
             failure = null;
             var found = new List<Found>();
             all = new List<Entity>();
+            placedHere = new List<Entity>();
 
             DecalPrefabCatalog catalog = m_Harness.Catalog;
             if (catalog == null)
@@ -468,12 +520,16 @@ namespace SeenBetterDays.Systems
 
                     Transform t = EntityManager.GetComponentData<Transform>(e);
                     float3 local = math.mul(inverse, t.m_Position - transform.m_Position);
-                    if (math.any(local < bounds.min) || math.any(local > bounds.max) || m_PreExisting.Contains(e))
+                    if (math.any(local < bounds.min) || math.any(local > bounds.max))
                     {
                         continue;
                     }
 
                     all.Add(e);
+                    if (!m_PreExisting.Contains(e))
+                    {
+                        placedHere.Add(e);
+                    }
                     int pack = DecalPrefabCatalog.PackOf(info.Name);
                     if (pack < 0)
                     {
@@ -512,7 +568,8 @@ namespace SeenBetterDays.Systems
             int notWhitelisted;
             string failure;
             List<Entity> allPlaced;
-            List<Found> found = CollectPlaced(out notWhitelisted, out failure, out allPlaced);
+            List<Entity> ignoredPlacedHere;
+            List<Found> found = CollectPlaced(out notWhitelisted, out failure, out allPlaced, out ignoredPlacedHere);
             if (failure != null)
             {
                 m_UI.SetMessage(failure);
@@ -562,6 +619,10 @@ namespace SeenBetterDays.Systems
                     position = new[] { Round(f.LocalPosition.x), Round(f.LocalPosition.y), Round(f.LocalPosition.z) },
                     rotation = new[] { f.LocalRotation.value.x, f.LocalRotation.value.y, f.LocalRotation.value.z, f.LocalRotation.value.w },
                     scale = new[] { scale.x, scale.y, scale.z },
+                    // The colour and mesh variant the designer saw; see DesignedDecal.seed.
+                    seed = EntityManager.HasComponent<Game.Common.PseudoRandomSeed>(f.Entity)
+                        ? (int?)EntityManager.GetComponentData<Game.Common.PseudoRandomSeed>(f.Entity).m_Seed
+                        : null,
                 };
             }
 

@@ -62,6 +62,11 @@ namespace SeenBetterDays.Designs
             public float3[] Positions;
             public quaternion[] Rotations;
             public OverlayFamily[] Families;
+
+            /// <summary>Each decal's random seed, the same on every building of the model: the
+            /// exported one, or for older designs one derived from the decal's name and place in
+            /// the design.</summary>
+            public ushort[] Seeds;
         }
 
         private sealed class Entry
@@ -298,6 +303,7 @@ namespace SeenBetterDays.Designs
                 Positions = new float3[decals.Length],
                 Rotations = new quaternion[decals.Length],
                 Families = new OverlayFamily[decals.Length],
+                Seeds = new ushort[decals.Length],
             };
 
             for (int i = 0; i < decals.Length; i++)
@@ -351,9 +357,27 @@ namespace SeenBetterDays.Designs
                     new quaternion(d.rotation[0], d.rotation[1], d.rotation[2], d.rotation[3]), quaternion.identity);
                 resolved.Families[i] = LowestFamily(info.AutomaticFamilies != OverlayFamily.None
                     ? info.AutomaticFamilies : info.Families);
+                resolved.Seeds[i] = d.seed.HasValue
+                    ? (ushort)math.clamp(d.seed.Value, 0, 65535)
+                    : StableSeed(d.decal, i);
             }
 
             entry.Resolved = resolved;
+        }
+
+        /// <summary>A seed from the decal's name and its place in the design: the same in every
+        /// session and on every building, unlike entity indices.</summary>
+        private static ushort StableSeed(string decal, int index)
+        {
+            uint hash = 2166136261u;
+            string text = decal ?? string.Empty;
+            for (int i = 0; i < text.Length; i++)
+            {
+                hash = (hash ^ text[i]) * 16777619u;
+            }
+
+            hash = (hash ^ (uint)index) * 16777619u;
+            return (ushort)(hash ^ (hash >> 16));
         }
 
         private void Reindex()

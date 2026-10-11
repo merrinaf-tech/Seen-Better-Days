@@ -12,6 +12,19 @@ using SeenBetterDays.Data;
 
 namespace SeenBetterDays.Rendering
 {
+    /// <summary>
+    /// Where on a lot a ground decal belongs: paved ground (drives, patios, paths) or the rest
+    /// (grass, soil, gardens). Asphalt patches make sense only on paving; cracks show best there;
+    /// leaves gather on grass.
+    /// </summary>
+    public enum GroundSurfacePreference : byte
+    {
+        Any,
+        PreferPaved,
+        PavedOnly,
+        PreferUnpaved,
+    }
+
     /// <summary>One decal object prefab we are allowed to instantiate.</summary>
     public sealed class DecalPrefabInfo
     {
@@ -100,6 +113,22 @@ namespace SeenBetterDays.Rendering
                     && (Flags & Game.Objects.GeometryFlags.ExclusiveGround) == 0;
             }
         }
+
+        /// <summary>Whether the decal paints the terrain, which is what a building's lot is.</summary>
+        public bool AffectsTerrain
+        {
+            get { return (LayerMask & DecalLayers.Terrain) != 0; }
+        }
+
+        /// <summary>The family this decal supplies to the ground layer on building lots, or None.
+        /// See DecalPrefabCatalog.ClassifyForGround.</summary>
+        public OverlayFamily GroundFamily;
+
+        /// <summary>The least weathered state this decal may appear on a lot.</summary>
+        public SeenBetterDays.Data.VisualState GroundMinState;
+
+        /// <summary>Which ground of a lot the decal belongs on. See GroundSurfacePreference.</summary>
+        public GroundSurfacePreference GroundSurface;
 
         /// <summary>Area the decal covers on the surface it lands on. The projector's thin
         /// axis is Y - that is the projection depth, not part of the footprint.</summary>
@@ -324,6 +353,170 @@ namespace SeenBetterDays.Rendering
         private readonly List<DecalPrefabInfo> m_All = new List<DecalPrefabInfo>();
         private readonly List<DecalPrefabInfo> m_BuildingCapable = new List<DecalPrefabInfo>();
         private readonly List<DecalPrefabInfo> m_AutoPool = new List<DecalPrefabInfo>();
+
+        /// <summary>
+        /// Decals for the ground of building lots: from the whitelisted packs, painting the
+        /// terrain, and named as cracks, dirt or stains. Many crack and repair decals cannot paint
+        /// walls at all - Cracks and Damage, for one, only paints terrain and roads - and the lot
+        /// around a building is where they belong.
+        /// </summary>
+        private readonly List<DecalPrefabInfo> m_GroundPool = new List<DecalPrefabInfo>();
+
+        public int GroundPoolCount
+        {
+            get { return m_GroundPool.Count; }
+        }
+
+        /// <summary>Largest a crack may be and still appear from Aged on a lot; bigger cracks and
+        /// damage wait for Neglected.</summary>
+        private const float SmallGroundCrack = 3f;
+
+        /// <summary>
+        /// Gives a terrain decal from a whitelisted pack its ground family and first state:
+        /// small cracks from Aged, dirt - rubbish, leaves - from Worn, large cracks, damage and
+        /// repair patches from Neglected, stains and puddles at Decayed.
+        /// </summary>
+        private void ClassifyForGround(DecalPrefabInfo info)
+        {
+            info.GroundFamily = OverlayFamily.None;
+            if (!info.AffectsTerrain || PackOf(info.Name) < 0 || info.Size.x < 0.5f || info.Size.z < 0.5f)
+            {
+                return;
+            }
+
+            if ((info.Families & OverlayFamily.Crack) != 0)
+            {
+                // Asphalt patches and joints read as repairs - dark, large, unmistakable - not as
+                // the first wear of an Aged lot; seen in game on 2026-10-02 they dominated the
+                // front of small houses. They wait for Neglected with the large cracks, so Aged
+                // and Worn lots show cracks only.
+                string lower = info.Name != null ? info.Name.ToLowerInvariant() : string.Empty;
+                bool repair = lower.Contains("patch") || lower.Contains("joint");
+
+                info.GroundFamily = OverlayFamily.Crack;
+                info.GroundMinState = info.SmallestEdge <= SmallGroundCrack && !repair
+                    ? SeenBetterDays.Data.VisualState.Aged
+                    : SeenBetterDays.Data.VisualState.Neglected;
+                info.GroundSurface = repair ? GroundSurfacePreference.PavedOnly : GroundSurfacePreference.PreferPaved;
+            }
+            else if ((info.Families & OverlayFamily.Dirt) != 0)
+            {
+                string lower = info.Name != null ? info.Name.ToLowerInvariant() : string.Empty;
+                info.GroundFamily = OverlayFamily.Dirt;
+                info.GroundMinState = SeenBetterDays.Data.VisualState.Worn;
+                info.GroundSurface = lower.Contains("leaf") || lower.Contains("leaves")
+                    ? GroundSurfacePreference.PreferUnpaved
+                    : GroundSurfacePreference.Any;
+            }
+            else if ((info.Families & OverlayFamily.Stain) != 0)
+            {
+                info.GroundFamily = OverlayFamily.Stain;
+                info.GroundMinState = SeenBetterDays.Data.VisualState.Decayed;
+                info.GroundSurface = GroundSurfacePreference.Any;
+            }
+            else
+            {
+                return;
+            }
+
+            m_GroundPool.Add(info);
+        }
+
+        /// <summary>A ground decal of this family allowed at this state, no longer than maxEdge
+        /// on either side, or null.</summary>
+        public DecalPrefabInfo PickGround(OverlayFamily family, float maxEdge, SeenBetterDays.Data.VisualState state, ref Unity.Mathematics.Random rng)
+        {
+            int matches = 0;
+            for (int i = 0; i < m_GroundPool.Count; i++)
+            {
+                DecalPrefabInfo d = m_GroundPool[i];
+                if (d.GroundFamily == family && d.GroundMinState <= state && d.Size.x <= maxEdge && d.Size.z <= maxEdge)
+                {
+                    matches++;
+                }
+            }
+
+            if (matches == 0)
+            {
+                return null;
+            }
+
+            int wanted = rng.NextInt(matches);
+            for (int i = 0; i < m_GroundPool.Count; i++)
+            {
+                DecalPrefabInfo d = m_GroundPool[i];
+                if (d.GroundFamily == family && d.GroundMinState <= state && d.Size.x <= maxEdge && d.Size.z <= maxEdge
+                    && wanted-- == 0)
+                {
+                    return d;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsTrashPackDecal(DecalPrefabInfo decal)
+        {
+            return decal.Name != null
+                && Normalise(decal.Name).StartsWith(Normalise("G87 Trash Decals Dirty Pack"), StringComparison.Ordinal);
+        }
+
+        /// <summary>Only actual litter from the approved pack, never leaves or generic dirt.</summary>
+        public DecalPrefabInfo PickTrashGround(float maxEdge, ref Unity.Mathematics.Random rng)
+        {
+            int matches = 0;
+            for (int i = 0; i < m_GroundPool.Count; i++)
+            {
+                DecalPrefabInfo d = m_GroundPool[i];
+                if (d.GroundFamily == OverlayFamily.Dirt && IsTrashPackDecal(d)
+                    && d.Size.x <= maxEdge && d.Size.z <= maxEdge)
+                {
+                    matches++;
+                }
+            }
+
+            if (matches == 0) return null;
+            int wanted = rng.NextInt(matches);
+            for (int i = 0; i < m_GroundPool.Count; i++)
+            {
+                DecalPrefabInfo d = m_GroundPool[i];
+                if (d.GroundFamily == OverlayFamily.Dirt && IsTrashPackDecal(d)
+                    && d.Size.x <= maxEdge && d.Size.z <= maxEdge && wanted-- == 0)
+                {
+                    return d;
+                }
+            }
+
+            return null;
+        }
+
+        public DecalPrefabInfo PickTrashWall(float maxWidth, float maxHeight, ref Unity.Mathematics.Random rng)
+        {
+            int matches = 0;
+            for (int i = 0; i < m_AutoPool.Count; i++)
+            {
+                DecalPrefabInfo d = m_AutoPool[i];
+                if (IsTrashPackDecal(d) && (d.AutomaticFamilies & OverlayFamily.Dirt) != 0
+                    && d.Size.x <= maxWidth && d.Size.z <= maxHeight)
+                {
+                    matches++;
+                }
+            }
+
+            if (matches == 0) return null;
+            int wanted = rng.NextInt(matches);
+            for (int i = 0; i < m_AutoPool.Count; i++)
+            {
+                DecalPrefabInfo d = m_AutoPool[i];
+                if (IsTrashPackDecal(d) && (d.AutomaticFamilies & OverlayFamily.Dirt) != 0
+                    && d.Size.x <= maxWidth && d.Size.z <= maxHeight && wanted-- == 0)
+                {
+                    return d;
+                }
+            }
+
+            return null;
+        }
         private readonly Dictionary<Entity, DecalPrefabInfo> m_ByPrefab = new Dictionary<Entity, DecalPrefabInfo>();
 
         /// <summary>Every decal by its prefab name. Hand-made designs refer to decals by name,
@@ -631,6 +824,7 @@ namespace SeenBetterDays.Rendering
             m_All.Clear();
             m_BuildingCapable.Clear();
             m_AutoPool.Clear();
+            m_GroundPool.Clear();
             System.Array.Clear(m_SourceCounts, 0, m_SourceCounts.Length);
             System.Array.Clear(m_PackPresent, 0, m_PackPresent.Length);
             m_ByPrefab.Clear();
@@ -662,6 +856,8 @@ namespace SeenBetterDays.Rendering
                             m_PackPresent[pack] = true;
                         }
                     }
+
+                    ClassifyForGround(info);
 
                     if (!info.AffectsBuildings)
                     {
@@ -697,6 +893,7 @@ namespace SeenBetterDays.Rendering
             m_All.Sort(CompareByName);
             m_BuildingCapable.Sort(CompareByName);
             m_AutoPool.Sort(CompareByName);
+            m_GroundPool.Sort(CompareByName);
         }
 
         private static int CompareByName(DecalPrefabInfo a, DecalPrefabInfo b)

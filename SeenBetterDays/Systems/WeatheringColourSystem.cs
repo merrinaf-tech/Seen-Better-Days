@@ -30,47 +30,119 @@ namespace SeenBetterDays.Systems
         private const int VerifyEveryFrames = 30;
         private int m_VerifyCountdown;
 
-        // Diagnosis of buildings turning clean on hover (2026-09-28): whether this pass really
-        // runs after MeshColorSystem, and what a hovered building carries when it does.
-        private Game.Rendering.MeshColorSystem m_MeshColorSystem;
-        private Game.Tools.ToolRaycastSystem m_RaycastSystem;
-
-        /// <summary>The building under the cursor, walking up from whatever part was hit.</summary>
-        private Entity HoveredBuilding()
-        {
-            if (m_RaycastSystem == null)
-            {
-                m_RaycastSystem = World.GetExistingSystemManaged<Game.Tools.ToolRaycastSystem>();
-            }
-
-            Game.Common.RaycastResult result;
-            if (m_RaycastSystem == null || !m_RaycastSystem.GetRaycastResult(out result))
-            {
-                return Entity.Null;
-            }
-
-            Entity hit = result.m_Owner;
-            for (int guard = 0; guard < 8 && hit != Entity.Null && EntityManager.Exists(hit); guard++)
-            {
-                if (EntityManager.HasComponent<Building>(hit))
-                {
-                    return hit;
-                }
-
-                if (!EntityManager.HasComponent<Owner>(hit))
-                {
-                    break;
-                }
-
-                hit = EntityManager.GetComponentData<Owner>(hit).m_Owner;
-            }
-
-            return Entity.Null;
-        }
-        private int m_OrderReports;
-
         private EntityQuery m_RentersUpdatedQuery;
+        private EntityQuery m_RecomputedQuery;
         private readonly HashSet<Entity> m_RentersChanged = new HashSet<Entity>();
+
+        /// <summary>Temporary copies of buildings - drawn by the game in place of a building while
+        /// it is hovered or handled by a tool - and the colour last written on each.</summary>
+        private EntityQuery m_TempCopiesQuery;
+        private readonly Dictionary<Entity, UnityEngine.Color> m_TempWritten = new Dictionary<Entity, UnityEngine.Color>();
+        private readonly List<Entity> m_TempGone = new List<Entity>();
+
+        /// <summary>
+        /// Darkens the temporary copies of weathered buildings with their original's weathering.
+        ///
+        /// While a building is hovered the game draws a Temp copy in its place, whose colour it
+        /// builds from the building's own colour, never from the darkened one: with the weathering
+        /// moved out of that colour, hovering showed the building clean. A copy is darkened once
+        /// per fresh colour the game gives it, known by its differing from what was written last.
+        /// Copies exist only while hovering or using a tool, so this is usually no work at all.
+        /// </summary>
+        private int DarkenTempCopies(IReadOnlyList<MeshColorOverlayRenderer> renderers)
+        {
+            if (m_TempCopiesQuery.IsEmptyIgnoreFilter)
+            {
+                if (m_TempWritten.Count > 0)
+                {
+                    m_TempWritten.Clear();
+                }
+
+                return 0;
+            }
+
+            int darkened = 0;
+            NativeArray<Entity> copies = m_TempCopiesQuery.ToEntityArray(Allocator.Temp);
+            try
+            {
+                for (int i = 0; i < copies.Length; i++)
+                {
+                    Entity copy = copies[i];
+                    Entity original = EntityManager.GetComponentData<Game.Tools.Temp>(copy).m_Original;
+                    if (original == Entity.Null)
+                    {
+                        continue;
+                    }
+
+                    // Read a copy's colour only when the game has just given it one: reading makes
+                    // the frame wait for the colour jobs, and doing it for every copy on every
+                    // frame took the pass from about 0.1 ms to 0.44 ms on average.
+                    bool fresh = !m_TempWritten.ContainsKey(copy)
+                              || EntityManager.HasComponent<BatchesUpdated>(copy)
+                              || EntityManager.HasComponent<Updated>(copy);
+                    if (!fresh)
+                    {
+                        continue;
+                    }
+
+                    BuildingVisualProfile profile = default;
+                    bool weathered = false;
+                    for (int r = 0; r < renderers.Count && !weathered; r++)
+                    {
+                        weathered = renderers[r].TryGetProfile(original, out profile);
+                    }
+
+                    if (!weathered)
+                    {
+                        continue;
+                    }
+
+                    DynamicBuffer<MeshColor> colours = EntityManager.GetBuffer<MeshColor>(copy);
+                    if (colours.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    UnityEngine.Color now = colours[0].m_ColorSet.m_Channel0;
+                    UnityEngine.Color last;
+                    if (m_TempWritten.TryGetValue(copy, out last)
+                        && System.Math.Abs(now.r - last.r) < 0.001f
+                        && System.Math.Abs(now.g - last.g) < 0.001f
+                        && System.Math.Abs(now.b - last.b) < 0.001f)
+                    {
+                        continue;
+                    }
+
+                    MeshColorOverlayRenderer.Darken(colours, profile);
+                    m_TempWritten[copy] = colours[0].m_ColorSet.m_Channel0;
+                    darkened++;
+                }
+
+                // Forget copies the game has removed.
+                if (m_TempWritten.Count > copies.Length)
+                {
+                    m_TempGone.Clear();
+                    foreach (KeyValuePair<Entity, UnityEngine.Color> pair in m_TempWritten)
+                    {
+                        if (!EntityManager.Exists(pair.Key) || !EntityManager.HasComponent<Game.Tools.Temp>(pair.Key))
+                        {
+                            m_TempGone.Add(pair.Key);
+                        }
+                    }
+
+                    for (int i = 0; i < m_TempGone.Count; i++)
+                    {
+                        m_TempWritten.Remove(m_TempGone[i]);
+                    }
+                }
+            }
+            finally
+            {
+                copies.Dispose();
+            }
+
+            return darkened;
+        }
 
         // What the pass costs, reported every ReportFrames frames: the reason for moving the
         // weathering here was to make it cheaper and safer, and that has to be measured.
@@ -80,6 +152,8 @@ namespace SeenBetterDays.Systems
         private int m_Darkened;
         private double m_TotalMilliseconds;
         private double m_MaxMilliseconds;
+        private double m_TempMilliseconds;
+        private double m_RentersMilliseconds;
 
         [Preserve]
         protected override void OnCreate()
@@ -88,50 +162,61 @@ namespace SeenBetterDays.Systems
             m_RentersUpdatedQuery = GetEntityQuery(
                 ComponentType.ReadOnly<Event>(),
                 ComponentType.ReadOnly<RentersUpdated>());
+
+            m_RecomputedQuery = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[] { ComponentType.ReadOnly<Building>() },
+                Any = new[]
+                {
+                    ComponentType.ReadOnly<BatchesUpdated>(),
+                    ComponentType.ReadOnly<Updated>(),
+                },
+                None = new[]
+                {
+                    ComponentType.ReadOnly<Deleted>(),
+                    ComponentType.ReadOnly<Game.Tools.Temp>(),
+                },
+            });
+
+            m_TempCopiesQuery = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[]
+                {
+                    ComponentType.ReadOnly<Game.Tools.Temp>(),
+                    ComponentType.ReadWrite<MeshColor>(),
+                    // Buildings only: with a tool open, its previews (trees, props, roads) get
+                    // fresh colours every frame, and listing them cost 0.25 ms a frame.
+                    ComponentType.ReadOnly<Building>(),
+                },
+                None = new[] { ComponentType.ReadOnly<Deleted>() },
+            });
+
+            // No changed-version filter. It kept the list short when every temporary entity was
+            // listed, but a filtered query has to wait for the jobs writing the colours before it
+            // can answer: 0.2-0.26 ms a frame for as long as a building was under the cursor.
+            // Limited to buildings the list is short anyway, and which copies have a fresh colour
+            // is told by the tags the game puts on them (DarkenTempCopies).
         }
 
         [Preserve]
         protected override void OnUpdate()
         {
-            if (m_OrderReports < 3)
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            m_RentersChanged.Clear();
+
+            // Buildings the game recomputes this frame. No MeshColor in the query, so listing them
+            // does not make the frame wait for the jobs that write colours.
+            if (!m_RecomputedQuery.IsEmptyIgnoreFilter)
             {
-                if (m_MeshColorSystem == null)
+                NativeArray<Entity> recomputed = m_RecomputedQuery.ToEntityArray(Allocator.Temp);
+                for (int i = 0; i < recomputed.Length; i++)
                 {
-                    m_MeshColorSystem = World.GetExistingSystemManaged<Game.Rendering.MeshColorSystem>();
+                    m_RentersChanged.Add(recomputed[i]);
                 }
 
-                if (m_MeshColorSystem != null && m_OrderReports == 2)
-                {
-                    // Name every system that ran between MeshColorSystem and this pass: the one
-                    // that copies colours for the screen must be among them, and the pass has to
-                    // run before it.
-                    uint after = m_MeshColorSystem.LastSystemVersion;
-                    var between = new System.Text.StringBuilder();
-                    foreach (ComponentSystemBase system in World.Systems)
-                    {
-                        if (system != this && system.LastSystemVersion > after)
-                        {
-                            between.Append(system.GetType().FullName).Append(" (").Append(system.LastSystemVersion).Append(") ");
-                        }
-                    }
-
-                    Mod.Log.Info("Seen Better Days: systems that ran between MeshColorSystem ("
-                               + after + ") and the colour pass: " + (between.Length > 0 ? between.ToString() : "none"));
-                }
-
-                if (m_MeshColorSystem != null)
-                {
-                    m_OrderReports++;
-                    Mod.Log.Info("Seen Better Days: colour pass order - MeshColorSystem last ran at version "
-                               + m_MeshColorSystem.LastSystemVersion + ", this pass at "
-                               + LastSystemVersion + ", world now " + EntityManager.GlobalSystemVersion
-                               + " (MeshColorSystem ran this frame before us if its version is the newer of the two).");
-                }
+                recomputed.Dispose();
             }
 
-            long started = System.Diagnostics.Stopwatch.GetTimestamp();
-            MeshColorOverlayRenderer.HoveredBuilding = HoveredBuilding();
-            m_RentersChanged.Clear();
             if (!m_RentersUpdatedQuery.IsEmptyIgnoreFilter)
             {
                 NativeArray<RentersUpdated> events = m_RentersUpdatedQuery.ToComponentDataArray<RentersUpdated>(Allocator.Temp);
@@ -143,6 +228,7 @@ namespace SeenBetterDays.Systems
                 events.Dispose();
             }
 
+            m_RentersMilliseconds += (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000d / System.Diagnostics.Stopwatch.Frequency;
             IReadOnlyList<MeshColorOverlayRenderer> renderers = MeshColorOverlayRenderer.All;
             int verifyBudget = 0;
             if (--m_VerifyCountdown <= 0)
@@ -158,6 +244,10 @@ namespace SeenBetterDays.Systems
                 darkened += renderers[i].LastPassDarkened;
             }
 
+            long tempStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+            darkened += DarkenTempCopies(renderers);
+            m_TempMilliseconds += (System.Diagnostics.Stopwatch.GetTimestamp() - tempStarted) * 1000d / System.Diagnostics.Stopwatch.Frequency;
+
             double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000d / System.Diagnostics.Stopwatch.Frequency;
             m_Frames++;
             m_TotalMilliseconds += ms;
@@ -172,8 +262,12 @@ namespace SeenBetterDays.Systems
             {
                 Mod.Log.Info("Seen Better Days: colour pass over " + m_Frames + " frames - "
                            + (m_TotalMilliseconds / m_Frames).ToString("0.000") + " ms average, "
-                           + m_MaxMilliseconds.ToString("0.00") + " ms slowest, "
+                           + m_MaxMilliseconds.ToString("0.00") + " ms slowest ("
+                           + (m_TempMilliseconds / m_Frames).ToString("0.000") + " ms of it on temporary copies, "
+                           + (m_RentersMilliseconds / m_Frames).ToString("0.000") + " ms listing recomputed buildings), "
                            + m_Darkened + " building colour(s) darkened in " + m_FramesWithWork + " frame(s).");
+                m_TempMilliseconds = 0d;
+                m_RentersMilliseconds = 0d;
                 m_Frames = 0;
                 m_FramesWithWork = 0;
                 m_Darkened = 0;

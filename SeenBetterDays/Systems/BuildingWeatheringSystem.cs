@@ -5,6 +5,7 @@ using Game.Common;
 using Game.Objects;
 using Game.Prefabs;
 using Game.Tools;
+using Game.UI.Tooltip;
 using Game.Zones;
 using System.Diagnostics;
 using System.Collections.Generic;
@@ -34,9 +35,14 @@ namespace SeenBetterDays.Systems
     /// </summary>
     public partial class BuildingWeatheringSystem : GameSystemBase
     {
-        /// <summary>Buildings examined per update. Small on purpose; the whole city comes round
-        /// in a few seconds of game time and nothing here is urgent.</summary>
-        private const int BuildingsPerUpdate = 256;
+        /// <summary>
+        /// Buildings examined per update, once the city has been caught up. This system runs every
+        /// frame - the update interval below is not honoured in this phase - so at 256 a city of
+        /// 2600 growables visited each building six times a second, for about 1 ms a frame. At 32
+        /// the same city comes round every second and a half, and a building that changes reaches
+        /// its new look in about a minute.
+        /// </summary>
+        private const int BuildingsPerUpdate = 32;
 
         /// <summary>
         /// Initial catch-up budget. Loading a large city used to recolour every building in one
@@ -55,6 +61,9 @@ namespace SeenBetterDays.Systems
         private MeshColorOverlayRenderer m_Renderer;
         private EntityQuery m_GrowableQuery;
         private EntityQuery m_UnderConstructionQuery;
+        private EntityQuery m_GarbageParametersQuery;
+        private GarbageParameterData m_GarbageParameters;
+        private bool m_HasGarbageParameters;
         private int m_Cursor;
 
         /// <summary>
@@ -176,6 +185,8 @@ namespace SeenBetterDays.Systems
                 },
             });
 
+            m_GarbageParametersQuery = GetEntityQuery(ComponentType.ReadOnly<GarbageParameterData>());
+
             RequireForUpdate(m_GrowableQuery);
         }
 
@@ -210,6 +221,7 @@ namespace SeenBetterDays.Systems
             // The land value range has to be measured against the city that just loaded, not the
             // one that was here before it.
             m_RangeKnown = false;
+            m_CategoryByPrefab.Clear();
             m_Pinned.Clear();
             m_CatchUpRemaining = 0;
             m_ResetCooldownUpdates = 0;
@@ -226,8 +238,62 @@ namespace SeenBetterDays.Systems
             // buildings in one frame right after load, just before a native crash. Removed.
             m_FullSweepPending = true;
             m_Pinned.Clear();
+            RepairSubObjectReferences();
 
             Mod.Log.Info("Seen Better Days: on load, " + Census());
+        }
+
+        /// <summary>
+        /// Removes references to objects that no longer exist from buildings' sub-object lists.
+        ///
+        /// Up to 0.1.6 leaving design mode removed the decals placed in it by tagging them from
+        /// this mod's systems, too late in the frame for the game to unregister them (see
+        /// DeferredDeletion). A decal attached to a wall stayed listed among the building's
+        /// sub-objects, the list is saved with the city, and demolishing the building later read
+        /// the missing object and crashed. A city saved in between still carries the entry.
+        /// </summary>
+        private void RepairSubObjectReferences()
+        {
+            EntityQuery query = GetEntityQuery(
+                ComponentType.ReadOnly<Building>(),
+                ComponentType.ReadWrite<Game.Objects.SubObject>(),
+                ComponentType.Exclude<Deleted>());
+            NativeArray<Entity> buildings = query.ToEntityArray(Allocator.TempJob);
+            int repairedBuildings = 0;
+            int removed = 0;
+            try
+            {
+                for (int i = 0; i < buildings.Length; i++)
+                {
+                    DynamicBuffer<Game.Objects.SubObject> subObjects =
+                        EntityManager.GetBuffer<Game.Objects.SubObject>(buildings[i]);
+                    int before = subObjects.Length;
+                    for (int j = subObjects.Length - 1; j >= 0; j--)
+                    {
+                        Entity subObject = subObjects[j].m_SubObject;
+                        if (subObject == Entity.Null || !EntityManager.Exists(subObject))
+                        {
+                            subObjects.RemoveAt(j);
+                        }
+                    }
+
+                    if (subObjects.Length != before)
+                    {
+                        repairedBuildings++;
+                        removed += before - subObjects.Length;
+                    }
+                }
+            }
+            finally
+            {
+                buildings.Dispose();
+            }
+
+            if (removed > 0)
+            {
+                Mod.Log.Info("Seen Better Days: removed " + removed + " reference(s) to missing objects from "
+                           + repairedBuildings + " building(s)' sub-object lists.");
+            }
         }
 
         public override int GetUpdateInterval(SystemUpdatePhase phase)
@@ -283,6 +349,12 @@ namespace SeenBetterDays.Systems
                 return;
             }
 
+            m_HasGarbageParameters = !m_GarbageParametersQuery.IsEmptyIgnoreFilter;
+            if (m_HasGarbageParameters)
+            {
+                m_GarbageParameters = m_GarbageParametersQuery.GetSingleton<GarbageParameterData>();
+            }
+
             NativeArray<Entity> buildings = m_GrowableQuery.ToEntityArray(Allocator.TempJob);
             try
             {
@@ -321,9 +393,11 @@ namespace SeenBetterDays.Systems
                     int previous = m_Cursor;
                     m_Cursor = (m_Cursor + 1) % buildings.Length;
 
-                    // One sweep of the city per measurement: land values drift as the city grows,
-                    // and a range measured once at load would slowly stop describing it.
-                    if (m_Cursor < previous)
+                    // Remeasured as the city grows, but at most once a minute or so. Land values
+                    // drift over months; remeasuring on every sweep - every twenty frames or so,
+                    // since this system runs each frame - classified and sorted the whole city
+                    // each time, with frames of up to 10 ms.
+                    if (m_Cursor < previous && UnityEngine.Time.frameCount - m_LandValueMeasuredFrame >= LandValueRemeasureFrames)
                     {
                         MeasureLandValueRange(buildings);
                     }
@@ -424,7 +498,8 @@ namespace SeenBetterDays.Systems
 
             float target = WeatheringTarget.Compute(
                 condition, abandonCost, spawnable.m_Level, efficiency, abandoned,
-                PovertyOf(building, category), WealthOf(building, category), SeedFor(building));
+                PovertyOf(building, category), WealthOf(building, category), SeedFor(building),
+                GarbageSeverityOf(building));
 
             WeatheringState state = EntityManager.HasComponent<WeatheringState>(building)
                 ? EntityManager.GetComponentData<WeatheringState>(building)
@@ -460,14 +535,17 @@ namespace SeenBetterDays.Systems
                                || firstSight
                                || math.abs(next - state.m_Weathering) >= RedrawThreshold;
 
+            bool moved = next != state.m_Weathering;
             state.m_Weathering = next;
 
             if (firstSight)
             {
                 EntityManager.AddComponentData(building, state);
             }
-            else
+            else if (moved)
             {
+                // Written only when it moved: in a settled city almost nothing does, and writing
+                // anyway marked every building's chunk as changed on every visit.
                 EntityManager.SetComponentData(building, state);
             }
 
@@ -522,6 +600,14 @@ namespace SeenBetterDays.Systems
             {
                 buildings.Dispose();
             }
+        }
+
+        private float GarbageSeverityOf(Entity building)
+        {
+            return m_HasGarbageParameters
+                && (Mod.Settings == null || Mod.Settings.EnableGarbageLitter)
+                ? GarbageSignal.Severity(EntityManager, building, m_GarbageParameters)
+                : 0f;
         }
 
         /// <summary>
@@ -622,7 +708,8 @@ namespace SeenBetterDays.Systems
 
                     WeatheringTarget.Parts parts = WeatheringTarget.Explain(
                         condition, abandonCost, spawnable.m_Level, efficiency, abandoned,
-                        PovertyOf(building, category), WealthOf(building, category), SeedFor(building));
+                        PovertyOf(building, category), WealthOf(building, category), SeedFor(building),
+                        GarbageSeverityOf(building));
                     float target = parts.Target;
                     float oldTarget = WeatheringTarget.TargetIgnoringLevelOnStreet(parts);
                     bucketOld[math.clamp((int)BuildingVisualProfile.StateFor(oldTarget), 0, 4)]++;
@@ -710,9 +797,14 @@ namespace SeenBetterDays.Systems
         /// what the tooltip says and what the colour was made from cannot drift apart. A
         /// diagnostic that can disagree with the thing it describes is worse than none.
         /// </summary>
-        public bool TryDescribeMaintenance(Entity building, out string text)
+        /// <remarks>
+        /// One row per fact, each drawn by the game as its own tooltip with the mod's icon. A
+        /// single custom-drawn tooltip with coloured glyphs came first, and the UI engine crashed
+        /// natively on 2026-10-11 while it was in use; the game's own rows carry no such risk.
+        /// </remarks>
+        public bool TryDescribeMaintenance(Entity building, List<MaintenanceRow> rows)
         {
-            text = null;
+            rows.Clear();
 
             if (!EntityManager.Exists(building) || !EntityManager.HasComponent<PrefabRef>(building))
             {
@@ -749,15 +841,9 @@ namespace SeenBetterDays.Systems
             float efficiency = EfficiencyOf(building);
             float poverty = PovertyOf(building, category);
             float wealth = WealthOf(building, category);
-            LandValueStats reference = StatsFor(category);
-            string compared = reference.Count >= MinCategorySample
-                ? " for " + category.ToString().ToLowerInvariant()
-                : " citywide";
-
             WeatheringTarget.Parts parts = WeatheringTarget.Explain(
                 condition, abandonCost, spawnable.m_Level, efficiency, abandoned,
-                poverty, wealth, SeedFor(building));
-            float target = parts.Target;
+                poverty, wealth, SeedFor(building), GarbageSeverityOf(building));
 
             // What is on the building right now, which during a slow recovery is not the target.
             float shown = EntityManager.HasComponent<WeatheringState>(building)
@@ -765,151 +851,164 @@ namespace SeenBetterDays.Systems
                 : 0f;
 
             VisualState visual = BuildingVisualProfile.StateFor(shown);
-            string state = string.Format("{0} ({1} of 5)", visual, (int)visual + 1);
-
-            // What the mod is actually doing to this building. The game's level used to be
-            // printed here instead; it is on the building's own panel, and it only feeds the
-            // weathering - the state is what decides the colour and the marks.
             float scale = Mod.Settings != null ? Mod.Settings.IntensityScale : 1f;
             float darkness;
             float desaturation;
             MeshColorOverlayRenderer.ColourAmounts(math.saturate(shown * scale), out darkness, out desaturation);
-            string colour = shown <= 0.005f
-                ? "colour: untouched"
-                : string.Format("colour: {0:0}% darker, {1:0}% greyer",
-                                (1f - darkness) * 100f, desaturation * 100f);
 
-            string decals;
+            rows.Clear();
+            rows.Add(new MaintenanceRow(
+                TooltipIcons.State(visual),
+                "State: " + visual + " · " + (int)math.round(shown * 100f) + "%"));
+
+            string author;
+            if (TryGetDesignAuthor(building, out author))
+            {
+                rows.Add(new MaintenanceRow(TooltipIcons.Author,
+                    "Author: " + (string.IsNullOrEmpty(author) ? "?" : author)));
+            }
+
+            if (m_HasGarbageParameters && EntityManager.HasComponent<GarbageProducer>(building))
+            {
+                GarbageProducer garbage = EntityManager.GetComponentData<GarbageProducer>(building);
+                int maximum = m_GarbageParameters.m_MaxGarbageAccumulation;
+                int garbagePercent = maximum > 0
+                    ? (int)math.round(math.saturate(garbage.m_Garbage / (float)maximum) * 100f)
+                    : 0;
+                bool warning = garbage.m_Garbage >= m_GarbageParameters.m_WarningGarbageLimit;
+                rows.Add(new MaintenanceRow(
+                    warning ? TooltipIcons.GarbageWarning : TooltipIcons.Garbage,
+                    "Garbage: " + garbagePercent + "%",
+                    warning ? TooltipColor.Warning : TooltipColor.Info));
+            }
+
+            rows.Add(new MaintenanceRow(TooltipIcons.Colour,
+                "Colour: −" + (int)math.round((1f - darkness) * 100f)
+                + "% · +" + (int)math.round(desaturation * 100f) + "%"));
+
             BuildingOverlayTestSystem overlays = World.GetExistingSystemManaged<BuildingOverlayTestSystem>();
             DecalObjectOverlayRenderer decalRenderer = overlays != null ? overlays.DecalRenderer : null;
-            int placed;
+            int placed = 0;
             string placedFamilies;
-            if (Mod.Settings != null && !Mod.Settings.EnableDecalDetail)
+            if (decalRenderer != null)
             {
-                decals = "decals: off in the options";
+                decalRenderer.TryCountPlaced(building, out placed, out placedFamilies);
             }
-            else if (decalRenderer != null && decalRenderer.TryCountPlaced(building, out placed, out placedFamilies))
-            {
-                // A hand-made design credits its designer, when they gave a name.
-                string author;
-                decals = decalRenderer.TryGetDesign(building, out author)
-                    ? string.Format("decals: {0} - hand-made design{1}", placed,
-                                    string.IsNullOrEmpty(author) ? string.Empty : " by " + author)
-                    : string.Format("decals: {0} - {1}", placed, placedFamilies);
-            }
-            else if (visual == VisualState.Maintained)
-            {
-                decals = "decals: none at Maintained";
-            }
-            else
-            {
-                BuildingVisualProfile planned = BuildingVisualProfile.FromWeathering(category, shown, SeedFor(building));
-                var wanted = new System.Text.StringBuilder();
-                foreach (OverlayFamily family in new[] { OverlayFamily.Dirt, OverlayFamily.Stain, OverlayFamily.Crack,
-                                                         OverlayFamily.Moss, OverlayFamily.Rust, OverlayFamily.Graffiti })
-                {
-                    if (planned.GetIntensity(family) > 0.01f)
-                    {
-                        if (wanted.Length > 0) wanted.Append(", ");
-                        wanted.Append(family);
-                    }
-                }
+            // Zero is not a fact while they are still to come: marks are placed a building at a
+            // time as the camera comes near, so a count of 0 usually meant "not yet".
+            bool decalsOn = Mod.Settings == null || Mod.Settings.EnableDecalDetail;
+            bool decalsExpected = decalsOn
+                && (visual != VisualState.Maintained
+                    || (m_HasGarbageParameters && (Mod.Settings == null || Mod.Settings.EnableGarbageLitter)
+                        && GarbageSignal.Tier(EntityManager, building, m_GarbageParameters) > 0));
+            rows.Add(new MaintenanceRow(TooltipIcons.Decals, "Decals: " + (
+                placed > 0 ? placed.ToString()
+                : !decalsOn ? "off"
+                : !decalsExpected ? "none"
+                : WithinDecalRange(building) ? "loading…"
+                : "up close")));
 
-                decals = wanted.Length > 0
-                    ? "decals: none yet - " + wanted + " within 200 m, from installed packs"
-                    : "decals: none at this state";
-            }
-
-            string street;
-            float landValue = LandValueOf(building);
-            if (!m_RangeKnown || landValue < 0f)
+            string why = "healthy";
+            if (parts.Abandoned)
             {
-                street = "street value unknown";
+                why = "abandoned";
             }
-            else if (wealth > 0.05f)
+            else if (parts.Distress > 0f && parts.Distress >= parts.PoorStreet
+                     && parts.Distress >= parts.Floor && parts.Distress >= parts.Neglect)
             {
-                street = string.Format("well-off street ({0:0} against a median of {1:0}{2})",
-                                       landValue, reference.Median, compared);
+                why = "upkeep";
             }
-            else if (poverty > 0.05f)
+            else if (parts.GarbageNeglect > 0f && parts.GarbageNeglect >= parts.ServiceNeglect
+                     && parts.GarbageNeglect >= parts.PoorStreet && parts.GarbageNeglect >= parts.Floor)
             {
-                street = string.Format("below-median street ({0:0} against a median of {1:0}{2})",
-                                       landValue, reference.Median, compared);
+                why = "garbage";
             }
-            else
+            else if (parts.ServiceNeglect > 0f && parts.ServiceNeglect >= parts.PoorStreet
+                     && parts.ServiceNeglect >= parts.Floor)
             {
-                street = string.Format("ordinary street ({0:0} against a median of {1:0}{2})",
-                                       landValue, reference.Median, compared);
+                why = "services";
             }
-
-            string trouble = "";
-            if (abandoned)
+            else if (parts.PoorStreet > 0f && parts.PoorStreet >= parts.Floor)
             {
-                trouble = ", abandoned";
+                why = "street";
             }
-            else if (condition < 0)
+            else if (parts.Floor > 0f)
             {
-                trouble = string.Format(", upkeep short by {0} of {1}", -condition, abandonCost);
+                why = string.Format("normal wear for level {0}", spawnable.m_Level);
             }
-            else if (efficiency < 0.95f)
-            {
-                trouble = string.Format(", running at {0:0}% efficiency", efficiency * 100f);
-            }
-
-            bool pinned = m_Pinned.Contains(building);
-            string hold = pinned ? " (held for testing)" : "";
-            string trajectory = "";
-            if (pinned)
-            {
-                trajectory = string.Format("\nnatural state: {0} - {1:0}%",
-                    BuildingVisualProfile.StateFor(target), target * 100f);
-            }
-            else if (math.abs(target - shown) >= 0.02f)
-            {
-                string direction = target > shown ? "weathering" : "recovering";
-                trajectory = string.Format("\n{0} toward {1} - {2:0}%", direction,
-                    BuildingVisualProfile.StateFor(target), target * 100f);
-            }
-
-            // Why it is not Maintained: the part of the formula that decided the value, from the
-            // same Explain the simulation uses, so the reason cannot disagree with the number.
-            // Maintained buildings keep the plain street line - there is nothing to explain.
-            string reasonLine = street + trouble;
+            // A Maintained building has nothing to explain - "Cause: garbage" under a spotless
+            // building read as a cause of nothing - except the litter, which can lie at any state.
             if (visual != VisualState.Maintained)
             {
-                if (parts.Abandoned)
-                {
-                    reasonLine = "why: abandoned";
-                }
-                else if (parts.Distress > 0f && parts.Distress >= parts.PoorStreet && parts.Distress >= parts.Floor)
-                {
-                    reasonLine = string.Format("why: its owners cannot cover upkeep (short by {0} of {1})",
-                                               -condition, abandonCost);
-                }
-                else if (parts.PoorStreet >= parts.Floor)
-                {
-                    reasonLine = string.Format("why: one of the cheapest {0} streets ({1:0} against a median of {2:0}{3})",
-                                               category.ToString().ToLowerInvariant(), landValue,
-                                               reference.Median, compared);
-                }
-                else
-                {
-                    reasonLine = string.Format("why: an ordinary level {0} building{1}{2}",
-                                               spawnable.m_Level,
-                                               parts.Individuality > 1.1f ? ", kept worse than most like it"
-                                                   : parts.Individuality < 0.9f ? ", kept better than most like it" : "",
-                                               wealth > 0.05f ? ", on a well-off street" : "");
-                }
-
-                if (!parts.Abandoned && parts.Neglect > 0.02f)
-                {
-                    reasonLine += string.Format("; services lacking (efficiency {0:0}%)", efficiency * 100f);
-                }
+                rows.Add(new MaintenanceRow(TooltipIcons.Cause, "Cause: " + why));
+            }
+            else if (m_HasGarbageParameters && (Mod.Settings == null || Mod.Settings.EnableGarbageLitter)
+                     && GarbageSignal.Tier(EntityManager, building, m_GarbageParameters) > 0)
+            {
+                rows.Add(new MaintenanceRow(TooltipIcons.Cause, "Cause: uncollected garbage (litter only)"));
             }
 
-            text = string.Format("{0} - {1:0}% weathered{2}\n{3}\n{4}\n{5}{6}",
-                                 state, shown * 100f, hold, colour, decals,
-                                 reasonLine, trajectory);
+            return true;
+        }
+
+        /// <summary>Whether the camera is close enough for the building to be given decals.
+        /// Measured from the same point DecalDetailSystem uses.</summary>
+        private bool WithinDecalRange(Entity building)
+        {
+            if (m_CameraSystem == null)
+            {
+                m_CameraSystem = World.GetOrCreateSystemManaged<Game.Rendering.CameraUpdateSystem>();
+            }
+
+            if (m_CameraSystem.activeCameraController == null || !EntityManager.HasComponent<Game.Objects.Transform>(building))
+            {
+                return true;
+            }
+
+            float3 position = EntityManager.GetComponentData<Game.Objects.Transform>(building).m_Position;
+            return math.distance(position, m_CameraSystem.activeCameraController.pivot) <= DecalDetailSystem.NearRadius;
+        }
+
+        private Game.Rendering.CameraUpdateSystem m_CameraSystem;
+
+        /// <summary>Returns the author of the design selected for this building, including before
+        /// its close-range decals have been instantiated.</summary>
+        public bool TryGetDesignAuthor(Entity building, out string author)
+        {
+            author = null;
+            if (!EntityManager.Exists(building))
+            {
+                return false;
+            }
+
+            BuildingOverlayTestSystem overlays = World.GetExistingSystemManaged<BuildingOverlayTestSystem>();
+            DecalObjectOverlayRenderer renderer = overlays != null ? overlays.DecalRenderer : null;
+            if (renderer != null && renderer.TryGetDesign(building, out author))
+            {
+                return true;
+            }
+
+            if (!EntityManager.HasComponent<PrefabRef>(building))
+            {
+                return false;
+            }
+
+            VisualState state = EntityManager.HasComponent<WeatheringState>(building)
+                ? BuildingVisualProfile.StateFor(EntityManager.GetComponentData<WeatheringState>(building).m_Weathering)
+                : VisualState.Maintained;
+            if (state == VisualState.Maintained)
+            {
+                return false;
+            }
+
+            SeenBetterDays.Designs.DesignLibrary.Resolved design;
+            Entity prefab = EntityManager.GetComponentData<PrefabRef>(building).m_Prefab;
+            if (!SeenBetterDays.Designs.DesignLibrary.Instance.TryPick(prefab, state, SeedFor(building), out design))
+            {
+                return false;
+            }
+
+            author = design.Author;
             return true;
         }
 
@@ -1078,8 +1177,43 @@ namespace SeenBetterDays.Systems
             };
         }
 
+        private const int LandValueRemeasureFrames = 3600;
+        private int m_LandValueMeasuredFrame = -LandValueRemeasureFrames;
+
+        /// <summary>
+        /// A building's zone type for the land value statistics, classified once per model: the
+        /// whole city is measured at once, and classifying every building each time took a
+        /// frame of 3-5 ms in a city of 2600, twice that in one twice the size. Buildings under
+        /// construction are left out, as the classifier would.
+        /// </summary>
+        private int CategoryForStats(Entity building)
+        {
+            if (!EntityManager.HasComponent<PrefabRef>(building)
+                || BuildingClassifier.IsUnderConstruction(EntityManager, building))
+            {
+                return -1;
+            }
+
+            Entity prefab = EntityManager.GetComponentData<PrefabRef>(building).m_Prefab;
+            int category;
+            if (!m_CategoryByPrefab.TryGetValue(prefab, out category))
+            {
+                string ignoredReason;
+                Entity ignoredPrefab;
+                int ignoredLevel;
+                category = (int)BuildingClassifier.Classify(
+                    EntityManager, building, out ignoredPrefab, out ignoredLevel, out ignoredReason);
+                m_CategoryByPrefab[prefab] = category;
+            }
+
+            return category;
+        }
+
+        private readonly Dictionary<Entity, int> m_CategoryByPrefab = new Dictionary<Entity, int>();
+
         private void MeasureLandValueRange(NativeArray<Entity> buildings)
         {
+            m_LandValueMeasuredFrame = UnityEngine.Time.frameCount;
             if (m_LandValueScratch == null || m_LandValueScratch.Length < buildings.Length)
             {
                 m_LandValueScratch = new float[math.max(64, buildings.Length)];
@@ -1104,11 +1238,7 @@ namespace SeenBetterDays.Systems
                 {
                     m_LandValueScratch[found++] = value;
 
-                    string ignoredReason;
-                    Entity ignoredPrefab;
-                    int ignoredLevel;
-                    int category = (int)BuildingClassifier.Classify(
-                        EntityManager, buildings[i], out ignoredPrefab, out ignoredLevel, out ignoredReason);
+                    int category = CategoryForStats(buildings[i]);
                     if (category >= 0 && category < perCategory.Length)
                     {
                         m_CategoryScratch[category][perCategory[category]++] = value;

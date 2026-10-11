@@ -31,7 +31,8 @@ Seen Better Days makes growable buildings reflect how they are doing. A building
 ## What you get
 
 - **Colour, city-wide.** Each building gets its own gentle darkening and fading, so two identical towers side by side no longer look like copies. Readable at any distance and light on performance.
-- **Detail, up close.** Near the camera, weathered buildings pick up stains, cracks, moss, rust, graffiti, rubbish and fallen leaves, scattered at random across the walls. They can take a few seconds to appear.
+- **Detail, up close.** Near the camera, weathered buildings pick up stains, cracks, moss, rust, graffiti, rubbish and fallen leaves, scattered at random across the walls and the ground of their lot. They can take a few seconds to appear.
+- **Litter.** Garbage the city fails to collect shows: from 30% of what a building can hold, rubbish appears on its lot and at the foot of its walls, more as it piles up. Needs [[G87] Trash Decals](https://mods.paradoxplaza.com/mods/87720/Windows).
 
 ## Five states, and the decals each one adds
 
@@ -57,11 +58,11 @@ Each state keeps what the one before it had and adds its own marks. Decals come 
 
 **Know a decal pack that would suit?** Tell me in the comments and I will look at adding it to the list.
 
-## Hand-made designs - 1 so far
+## Hand-made designs - 6 so far
 
 Random placement is only the start. A building can also get designs made by hand. When a building has a design for its state, the mod uses it; when it has none, it keeps placing decals at random.
 
-The base game, its DLC and the official region packs together have about **3,450 different building models**, and each has four states that carry decals: nearly 14,000 possible designs. This is a long-term project: I will add them a few at a time, starting with the buildings that inspire me most and the ones the mod handles worst.
+The base game, its DLC and the official region packs together have about **4,500 different building models**, and each has four states that carry decals: about 18,000 possible designs. This is a long-term project: I will add them a few at a time, starting with the buildings that inspire me most and the ones the mod handles worst.
 
 Hand-made designs are also lighter: placing one took about an eighth of the time of a random placement in testing, because the mod no longer has to study the walls.
 
@@ -73,11 +74,13 @@ Hand-made designs are also lighter: placing one took about an eighth of the time
 
 - **Weather buildings** - the whole effect, on or off, live.
 - **Close-range detail** - the decals, on or off.
+- **Litter from accumulated garbage** - the litter, on or off.
+- **Show compact building tooltip** - a short summary under the cursor: state, garbage, colour, decals and why. Design credits show either way.
 - **Intensity** - from 25% to 200%.
 - **Rebuild Seen Better Days appearance** - clears everything the mod drew and applies it again.
 - **Reset saved building colours** - repairs cities whose colours were saved darkened by versions up to 0.1.4. It resets all custom colours on growable buildings, including your own choices. Back up the city first, then save after using it.
 
-With the game's **Show Advanced** switch on: a tooltip explaining why a building looks the way it does, keys to set a building's state by hand, the design tools and the developer shortcuts. All are off by default.
+With the game's **Show Advanced** switch on: keys to set a building's state by hand, the design tools and the developer shortcuts. All are off by default.
 
 ## Good to know
 
@@ -102,7 +105,7 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 	<ExternalLink Type="github" Url="https://github.com/merrinaf-tech/Seen-Better-Days" />
 	<ExternalLink Type="kofi" Url="https://ko-fi.com/fabiozsche" />
 
-	<ModVersion Value="0.1.5" />
+	<ModVersion Value="0.1.6" />
 
 	<!-- Built and verified against game build 1.6.2f1. -->
 	<GameVersion Value="1.6.*" />
@@ -112,9 +115,17 @@ Free and open source under the MIT licence: [source on GitHub](https://github.co
 
 	<!-- Read by Update and NewVersion only; the first Publish ignores it. -->
 	<ChangeLog>
-	- Fixed building colours becoming faded or black after saving and loading.
-	- Added Reset saved building colours for cities affected by earlier versions. This also resets player-selected growable colours; back up the city first.
-	- Weathering no longer modifies colours saved with the city, allowing clean removal after resetting and saving.
-	- Added a Worn design for IndustrialManufacturing01_L5_2x2, by Fabiozsche.
+	- Fixed a crash when demolishing a building after leaving design mode.
+	- Hand-made designs look the same on every building of the model.
+	- Hand-made designs are no longer used on the left- or right-hand version of their building.
+	- Litter appears on lots and low walls as garbage piles up.
+	- Decals change when a building changes state.
+	- Aged buildings are clearly darker than Maintained ones.
+	- Level 2 buildings need a real problem to look Aged.
+	- The building tooltip is a compact summary with icons, state first.
+	- Design mode asks before removing the decals placed in it.
+	- Decals placed by hand before design mode can be exported.
+	- Lower performance cost, and no more stutters when decals appear.
+	- Added Aged designs for CN_BonusOfficeHigh01a_L2_2x4, FR_OfficeHigh01_L2_3x2, FR_OfficeHighCorner02R_L2_3x3, ResidentialLowRent01_L1_5x5 and ResidentialLowRent04_L5_6x6, by Fabiozsche.
 	</ChangeLog>
 </Publish>

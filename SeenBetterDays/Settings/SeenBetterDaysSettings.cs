@@ -7,11 +7,9 @@ namespace SeenBetterDays.Settings
     /// <summary>
     /// Options page for Seen Better Days.
     ///
-    /// Two of these settings exist because the mod was built in front of someone watching it, and
-    /// the things that were useful for building it are not the things a player wants switched on.
-    /// The maintenance tooltip and the hand-set state keys are development instruments: they were
-    /// always on because the alternative was judging colours blind, and they default to off here
-    /// because a player who has not asked for a panel under their cursor should not get one.
+    /// The compact building tooltip is optional so players can choose whether to see its summary
+    /// under the cursor. Design authors remain credited even when the summary is disabled. The
+    /// hand-set state keys and developer shortcuts stay advanced and off by default.
     ///
     /// Nothing on this page is written into a city save. The weathering is recomputed from the
     /// game's own numbers every time a city loads, so changing any of these takes effect on the
@@ -56,6 +54,12 @@ namespace SeenBetterDays.Settings
         [SettingsUIDisableByCondition(typeof(SeenBetterDaysSettings), nameof(IsWeatheringDisabled))]
         public bool EnableDecalDetail { get; set; } = true;
 
+        /// <summary>Read the game's accumulated garbage for each building. Excess garbage has a
+        /// bounded effect on weathering and adds removable close-range litter decals.</summary>
+        [SettingsUISection(MainSection, LayersGroup)]
+        [SettingsUIDisableByCondition(typeof(SeenBetterDaysSettings), nameof(IsWeatheringDisabled))]
+        public bool EnableGarbageLitter { get; set; } = true;
+
         /// <summary>
         /// How strongly weathering shows, as a percentage of the tuned default.
         ///
@@ -93,14 +97,11 @@ namespace SeenBetterDays.Settings
         }
 
         /// <summary>
-        /// Shows, under the cursor, how well kept the game thinks a building is and why.
-        ///
-        /// Off by default. It is genuinely useful - it is the only way to check that a colour on a
-        /// wall means what it claims to - but it puts an extra panel under the cursor on every
-        /// building, and that is a choice to opt into rather than to discover.
+        /// Shows a compact icon-keyed summary when hovering a weathered building. Design credits
+        /// remain visible when this is off.
         /// </summary>
-        [SettingsUISection(MainSection, DeveloperGroup)]
-        [SettingsUIAdvanced]
+        [SettingsUISection(MainSection, LayersGroup)]
+        [SettingsUIDisableByCondition(typeof(SeenBetterDaysSettings), nameof(IsWeatheringDisabled))]
         public bool ShowMaintenanceTooltip { get; set; }
 
         /// <summary>
@@ -173,6 +174,7 @@ namespace SeenBetterDays.Settings
         {
             EnableWeathering = true;
             EnableDecalDetail = true;
+            EnableGarbageLitter = true;
             Intensity = DefaultIntensity;
             ShowMaintenanceTooltip = false;
             EnableStateKeys = false;

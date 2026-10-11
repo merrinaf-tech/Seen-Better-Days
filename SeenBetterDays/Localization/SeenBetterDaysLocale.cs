@@ -61,6 +61,19 @@ namespace SeenBetterDays.Localization
                     "Intensity"
                 },
                 {
+                    m_Settings.GetOptionLabelLocaleID(nameof(SeenBetterDaysSettings.EnableGarbageLitter)),
+                    "Litter from accumulated garbage"
+                },
+                {
+                    m_Settings.GetOptionDescLocaleID(nameof(SeenBetterDaysSettings.EnableGarbageLitter)),
+                    "Up close, buildings holding uncollected garbage get litter on their lots and low "
+                  + "walls, from 30% of what they can hold and more as it piles up; above the game's "
+                  + "garbage warning they also weather a little. Requires "
+                  + "Close-range detail and the optional G87 Trash Decals pack for visible litter. "
+                  + "Turning this off removes those extra decals; the game's own garbage penalty "
+                  + "to building efficiency still applies."
+                },
+                {
                     m_Settings.GetOptionDescLocaleID(nameof(SeenBetterDaysSettings.Intensity)),
                     "How loudly the weathering is stated. This changes only what is drawn, never "
                   + "what the game decides about a building."
@@ -91,14 +104,12 @@ namespace SeenBetterDays.Localization
 
                 {
                     m_Settings.GetOptionLabelLocaleID(nameof(SeenBetterDaysSettings.ShowMaintenanceTooltip)),
-                    "Show maintenance in the tooltip"
+                    "Show compact building tooltip"
                 },
                 {
                     m_Settings.GetOptionDescLocaleID(nameof(SeenBetterDaysSettings.ShowMaintenanceTooltip)),
-                    "Adds a line under the cursor saying how weathered a building is and why - its "
-                  + "level, what its street is worth against the rest of the city, and any trouble "
-                  + "it is in. Useful for understanding why a building looks the way it does, and "
-                  + "an extra panel on every building you point at."
+                    "Shows a compact icon summary of garbage, state, colour, decals and cause. "
+                  + "Design credits remain visible when this is off."
                 },
 
                 {

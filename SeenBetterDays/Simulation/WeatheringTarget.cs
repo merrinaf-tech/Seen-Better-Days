@@ -47,6 +47,10 @@ namespace SeenBetterDays.Simulation
         /// </summary>
         private static readonly float[] s_StreetByLevel = { 0.8f, 0.8f, 0.6f, 0.4f, 0.2f, 0f };
 
+        /// <summary>The most the level floor may give a level 2 building: just under the Aged
+        /// threshold of 0.12 (BuildingVisualProfile.StateFor).</summary>
+        private const float Level2FloorCap = 0.118f;
+
         /// <summary>
         /// Computes the target, 0..1.
         /// </summary>
@@ -79,9 +83,9 @@ namespace SeenBetterDays.Simulation
         /// not kept equally well, and without this they came out identical - the city read as one
         /// building repeated, which is the thing the mod exists to break up.
         /// </param>
-        public static float Compute(int condition, int abandonCost, int level, float efficiency, bool abandoned, float poverty, float wealth, uint seed)
+        public static float Compute(int condition, int abandonCost, int level, float efficiency, bool abandoned, float poverty, float wealth, uint seed, float garbage = 0f)
         {
-            return Explain(condition, abandonCost, level, efficiency, abandoned, poverty, wealth, seed).Target;
+            return Explain(condition, abandonCost, level, efficiency, abandoned, poverty, wealth, seed, garbage).Target;
         }
 
         /// <summary>
@@ -108,11 +112,13 @@ namespace SeenBetterDays.Simulation
             /// <summary>The poor-street term as it was before it depended on level. Kept only so
             /// the load census can compare the old rule with the new one.</summary>
             public float PoorStreetIgnoringLevel;
-            /// <summary>What missing services add.</summary>
+            /// <summary>The larger of missing-service and excess-garbage effects.</summary>
             public float Neglect;
+            public float ServiceNeglect;
+            public float GarbageNeglect;
         }
 
-        public static Parts Explain(int condition, int abandonCost, int level, float efficiency, bool abandoned, float poverty, float wealth, uint seed)
+        public static Parts Explain(int condition, int abandonCost, int level, float efficiency, bool abandoned, float poverty, float wealth, uint seed, float garbage = 0f)
         {
             // Abandonment is the end of the scale, but only as a destination. The approach rate
             // is what stops a building going derelict the instant its last tenant leaves - the
@@ -160,6 +166,15 @@ namespace SeenBetterDays.Simulation
                         * (1f - math.saturate(wealth))
                         * individuality;
 
+            // At level 2 the floor and the building's luck stop just short of Aged: on their own
+            // they made a thriving office on a well-off street look worn (17%, reported
+            // 2026-10-04). Something else has to be wrong as well - a service missing - for the
+            // building to cross.
+            if (level == 2)
+            {
+                floor = math.min(floor, Level2FloorCap);
+            }
+
             // Kept, but small in practice: it can only reach as far as the spread below the median
             // allows, which in a measured city was not far at all.
             float poorStreetIgnoringLevel = math.saturate(poverty) * 0.45f;
@@ -167,19 +182,31 @@ namespace SeenBetterDays.Simulation
 
             // Services failing is weathering the player can see the cause of and fix. Weighted
             // below distress: a building can be perfectly kept and still have a bin strike.
-            float neglect = math.saturate(1f - efficiency) * 0.35f;
+            float serviceNeglect = math.saturate(1f - efficiency) * 0.35f;
+            // Garbage already lowers the game's efficiency. Take the stronger signal rather than
+            // adding it twice, and cap its independent effect below the Worn threshold.
+            float garbageNeglect = math.saturate(garbage) * 0.25f;
+            float neglect = math.max(serviceNeglect, garbageNeglect);
 
             // Distress dominates, and the level floor only lifts the bottom rather than adding on
             // top - a struggling cheap building should not read as worse than a derelict one.
+            // Except at level 2, where they add up: the floor stops just short of Aged, and any
+            // small debt or slightly cheap street on top of it should be enough to cross.
+            float baseline = level == 2
+                ? math.saturate(floor + poorStreet + distress)
+                : math.max(math.max(floor, poorStreet), distress);
+
             return new Parts
             {
-                Target = math.saturate(math.max(math.max(floor, poorStreet), distress) + neglect * (1f - distress)),
+                Target = math.saturate(baseline + neglect * (1f - distress)),
                 Distress = distress,
                 Floor = floor,
                 Individuality = individuality,
                 PoorStreet = poorStreet,
                 PoorStreetIgnoringLevel = poorStreetIgnoringLevel,
                 Neglect = neglect,
+                ServiceNeglect = serviceNeglect,
+                GarbageNeglect = garbageNeglect,
             };
         }
 

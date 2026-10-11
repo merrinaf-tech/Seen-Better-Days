@@ -103,8 +103,14 @@ namespace SeenBetterDays.Designs
         }
 
         /// <summary>
-        /// The names of the meshes a prefab uses, sorted and joined. A prefab without meshes (or
-        /// whose meshes cannot be named) is its own model, by its prefab name.
+        /// The meshes a prefab uses - each by name and by where it is placed in the lot - sorted
+        /// and joined. A prefab without meshes (or whose meshes cannot be named) is its own model,
+        /// by its prefab name.
+        ///
+        /// The placement is part of it. Left- and right-hand versions of a building, such as
+        /// FR_OfficeHighCorner02L and 02R, use the same mesh turned and moved within the lot; by
+        /// name alone they were one model, and a design made on the R was laid on the L, where
+        /// its walls are elsewhere - a whole facade's marks hung in the air (2026-10-11).
         /// </summary>
         private static string ModelOf(EntityManager entityManager, PrefabSystem prefabSystem, Entity prefab,
                                       string prefabName, List<string> scratch)
@@ -125,9 +131,22 @@ namespace SeenBetterDays.Designs
                         // Unnamed mesh: falls back to the prefab name below.
                     }
 
-                    if (!string.IsNullOrEmpty(meshName) && !scratch.Contains(meshName))
+                    if (string.IsNullOrEmpty(meshName))
                     {
-                        scratch.Add(meshName);
+                        continue;
+                    }
+
+                    // Rounded so float noise between prefabs cannot split one model in two.
+                    SubMesh subMesh = subMeshes[i];
+                    string placed = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "{0}@{1:0.00},{2:0.00},{3:0.00}/{4:0.000},{5:0.000},{6:0.000},{7:0.000}",
+                        meshName,
+                        subMesh.m_Position.x, subMesh.m_Position.y, subMesh.m_Position.z,
+                        subMesh.m_Rotation.value.x, subMesh.m_Rotation.value.y,
+                        subMesh.m_Rotation.value.z, subMesh.m_Rotation.value.w);
+                    if (!scratch.Contains(placed))
+                    {
+                        scratch.Add(placed);
                     }
                 }
             }

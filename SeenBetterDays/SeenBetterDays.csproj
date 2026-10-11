@@ -105,6 +105,12 @@
 	<Target Name="CopyUiModule" AfterTargets="RunModPostProcessor" BeforeTargets="DeployWIP">
 		<Copy SourceFiles="$(MSBuildProjectDirectory)/UI/SeenBetterDays.mjs" DestinationFolder="$(OutDir)" />
 
+		<!-- The maintenance tooltip's icons, served as coui://ui-mods/sbd-icons/ (TooltipIcons). -->
+		<ItemGroup>
+			<TooltipIcon Include="$(MSBuildProjectDirectory)/UI/icons/*.svg" />
+		</ItemGroup>
+		<Copy SourceFiles="@(TooltipIcon)" DestinationFolder="$(OutDir)sbd-icons" />
+
 		<!-- Hand-made designs shipped with the mod, ShippedDesigns/<building>/<design>/design.json,
 		     deployed as Designs/. Screenshots stay in the repository for review. -->
 		<ItemGroup>
