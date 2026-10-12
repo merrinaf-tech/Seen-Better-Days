@@ -26,7 +26,9 @@
 
 *"It was better when it was getting worse"* (cit. Caparezza)
 
-Seen Better Days makes growable buildings reflect how they are doing. A building's look follows its real circumstances - its condition, the services it gets, whether it is abandoned, its level and how its street compares with the rest of your city. Nothing ages on a timer: a building whose situation improves cleans up again on its own.
+Seen Better Days makes growable buildings reflect how they are doing.
+
+A building's look follows its condition, efficiency, the services it gets, whether it is abandoned, its level and how its street compares with the rest of your city. Nothing ages on a timer, a building whose situation improves cleans up again on its own.
 
 ## What you get
 
@@ -85,6 +87,10 @@ With the game's **Show Advanced** switch on: keys to set a building's state by h
 ## Good to know
 
 This is an early version. Colours you set yourself, in the game or with Recolor, are kept during normal use: the mod weathers them instead of replacing them. To remove Seen Better Days from an affected old city, use **Reset saved building colours**, turn off **Weather buildings**, save, then unsubscribe. If something looks wrong, a comment with a screenshot helps a lot.
+
+## Thank you
+
+A big thank you to the creators of these wonderful packs: **elGendo87** ([G87] Trash Decals, Moss and Rust, Stains and Puddles: Wet Pack, Road Repair: Patch Pack), **Sully_Skylines** (Cracks and Damage, Stains and Leakage), **MayorCheeks** (Scribbles and Tags, Street Art), **rzzirrah** (Urban Decay Packs 1 and 2) and **gagaXm** (Fallen leaves decals). Without their decals this mod would not exist. If you enjoy what they do here, go and give their packs a like.
 
 Free and open source under the MIT licence: [source on GitHub](https://github.com/merrinaf-tech/Seen-Better-Days).
 	</LongDescription>

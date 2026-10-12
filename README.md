@@ -46,6 +46,13 @@ From Moss and Rust, each piece supplies its own family. From the two Urban Decay
 wall pieces are used - peeling plaster, holes, leaks, moss and torn posters - listed by number,
 since their names carry no keyword; brick walls, rusty roofs and hazard stripes are left out. The list lives in `SeenBetterDays/Rendering/DecalPrefabCatalog.cs`.
 
+## Thank you
+
+A big thank you to the creators of these wonderful packs: **elGendo87** ([G87] Trash Decals, Moss and Rust, Stains and Puddles: Wet Pack,
+Road Repair: Patch Pack), **Sully_Skylines** (Cracks and Damage, Stains and Leakage), **MayorCheeks**
+(Scribbles and Tags, Street Art), **rzzirrah** (Urban Decay Packs 1 and 2) and **gagaXm** (Fallen
+leaves decals). Without their decals this mod would not exist.
+
 ## Options
 
 | Option | Default | Meaning |
